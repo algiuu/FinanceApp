@@ -27,7 +27,7 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     val savingGoals: StateFlow<List<SavingGoal>> = dao.getAllSavingGoalsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val geminiService = GeminiService("AIzaSyAfxTSfUnWHltjlelMJeR1mZM_d9rp44wE")
+    private val geminiService = GeminiService("YOUR_API_KEY")
 
     fun onAiAction(userInput: String, isChatMode: Boolean) {
         if (isChatMode) {

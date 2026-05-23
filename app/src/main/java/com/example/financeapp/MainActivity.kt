@@ -4,6 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -97,7 +100,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Dashboard : Screen("dashboard", "Utama", Icons.Rounded.Home)
     object Wallets : Screen("wallets", "Dompet", Icons.Rounded.AccountBalanceWallet)
     object Transactions : Screen("transactions", "Riwayat", Icons.Rounded.ListAlt)
-    object AI : Screen("ai", "AI ✨", Icons.Rounded.AutoAwesome)
+    object AI : Screen("ai", "AI", Icons.Rounded.AutoAwesome)
     object Goals : Screen("goals", "Target", Icons.Rounded.TrackChanges)
     object Categories : Screen("categories", "Kategori", Icons.Rounded.Tag)
 }
@@ -119,19 +122,39 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
                 modifier = Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             ) {
-                val screens = listOf(Screen.Dashboard, Screen.Wallets, Screen.Transactions, Screen.AI, Screen.Goals, Screen.Categories)
+                val screens = remember { listOf(Screen.Dashboard, Screen.Wallets, Screen.Transactions, Screen.AI, Screen.Goals, Screen.Categories) }
                 screens.forEach { screen ->
                     val isSelected = currentScreen == screen
+                    
+                    val animatedIconSize by animateDpAsState(
+                        targetValue = if (isSelected) 28.dp else 22.dp,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessHigh
+                        ),
+                        label = "iconFlash"
+                    )
+
                     NavigationBarItem(
                         icon = { 
                             Icon(
                                 screen.icon, 
                                 contentDescription = screen.title,
-                                modifier = Modifier.size(if (isSelected) 26.dp else 22.dp)
+                                modifier = Modifier.size(animatedIconSize)
                             ) 
                         },
-                        label = { Text(screen.title, fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold) },
+                        label = { 
+                            Text(
+                                screen.title, 
+                                fontSize = 9.sp, 
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Visible,
+                                softWrap = false
+                            ) 
+                        },
                         selected = isSelected,
+                        alwaysShowLabel = true,
                         onClick = { currentScreen = screen },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
@@ -165,8 +188,18 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     val kategoris by viewModel.kategoris.collectAsState()
     
     val totalBalance = remember(wallets) { wallets.sumOf { it.balance } }
-    val totalIncome = remember(activities) { activities.filter { it.type == "income" }.sumOf { it.amount } }
-    val totalExpense = remember(activities) { activities.filter { it.type == "expense" }.sumOf { it.amount } }
+    
+    // Filter Aktivitas Bulan Ini (Reset tiap tanggal 1)
+    val currentMonthActivities = remember(activities) {
+        val now = LocalDate.now()
+        val yearMonth = String.format("%04d-%02d", now.year, now.monthValue)
+        activities.filter { it.date.startsWith(yearMonth) }
+    }
+    
+    val totalIncome = remember(currentMonthActivities) { currentMonthActivities.filter { it.type == "income" }.sumOf { it.amount } }
+    val totalExpense = remember(currentMonthActivities) { currentMonthActivities.filter { it.type == "expense" }.sumOf { it.amount } }
+    val netMonthly = totalIncome - totalExpense
+
     val budgetKategoris = remember(kategoris) { kategoris.filter { it.budget > 0 } }
 
     val isDark = isSystemInDarkTheme()
@@ -255,14 +288,45 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color.White.copy(alpha = 0.15f))
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        StatItem(Icons.Rounded.TrendingUp, "Surplus", formatRp(totalIncome), Color(0xFF4ADE80))
-                        Box(modifier = Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.2f)))
-                        StatItem(Icons.Rounded.TrendingDown, "Defisit", formatRp(totalExpense), Color(0xFFF87171))
+                        // Surplus
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Surplus", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                            Text(formatRp(totalIncome).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFF4ADE80), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        
+                        // Separator & Net
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        ) {
+                            Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
+                            Text(
+                                if (netMonthly >= 0) "Sisa" else "Minus",
+                                fontSize = 8.sp,
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                formatRp(netMonthly).replace("Rp ", ""),
+                                fontSize = 10.sp,
+                                color = if (netMonthly >= 0) Color(0xFF4ADE80) else Color(0xFFF87171),
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1
+                            )
+                            Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
+                        }
+
+                        // Defisit
+                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                            Text("Defisit", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                            Text(formatRp(totalExpense).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                        }
                     }
                 }
             }
@@ -683,6 +747,9 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
     val kategoris by viewModel.kategoris.collectAsState()
     val wallets by viewModel.wallets.collectAsState()
 
+    val categoryMap = remember(kategoris) { kategoris.associateBy { it.id } }
+    val walletMap = remember(wallets) { wallets.associateBy { it.id } }
+
     var showAddDialog by remember { mutableStateOf(false) }
     var activityToEdit by remember { mutableStateOf<Activity?>(null) }
     
@@ -787,8 +854,8 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
                 items = filteredActivities,
                 key = { it.id } // Optimization: provide a stable key
             ) { act ->
-                val cat = remember(kategoris, act.categoryId) { kategoris.find { it.id == act.categoryId } }
-                val wal = remember(wallets, act.walletId) { wallets.find { it.id == act.walletId } }
+                val cat = categoryMap[act.categoryId]
+                val wal = walletMap[act.walletId]
                 TransactionListCard(
                     activity = act, 
                     category = cat, 
@@ -1522,6 +1589,7 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
     var showAddDialog by remember { mutableStateOf(false) }
     var goalToEdit by remember { mutableStateOf<SavingGoal?>(null) }
     var goalToTopUp by remember { mutableStateOf<SavingGoal?>(null) }
+    var goalToWithdraw by remember { mutableStateOf<SavingGoal?>(null) }
     
     Column(
         modifier = Modifier
@@ -1595,10 +1663,16 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
                         }
                         
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { goalToWithdraw = goal }) {
+                                Icon(Icons.Rounded.Remove, "", modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Kurangi", color = MaterialTheme.colorScheme.error)
+                            }
+                            Spacer(Modifier.width(8.dp))
                             TextButton(onClick = { goalToTopUp = goal }) {
                                 Icon(Icons.Rounded.Add, "", modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Tambah Tabungan")
+                                Text("Tambah")
                             }
                             IconButton(onClick = { viewModel.deleteSavingGoal(goal) }, modifier = Modifier.size(24.dp)) {
                                 Icon(Icons.Rounded.DeleteOutline, "", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.4f), modifier = Modifier.size(18.dp))
@@ -1631,6 +1705,18 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
         )
     }
 
+    goalToWithdraw?.let { goal ->
+        TopUpGoalDialog(
+            goalName = goal.title,
+            isWithdraw = true,
+            onDismiss = { goalToWithdraw = null },
+            onConfirm = { amount ->
+                viewModel.addSavingGoalAmount(goal.id, -amount)
+                goalToWithdraw = null
+            }
+        )
+    }
+
     goalToTopUp?.let { goal ->
         TopUpGoalDialog(
             goalName = goal.title,
@@ -1644,20 +1730,30 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
 }
 
 @Composable
-fun TopUpGoalDialog(goalName: String, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
+fun TopUpGoalDialog(
+    goalName: String, 
+    isWithdraw: Boolean = false,
+    onDismiss: () -> Unit, 
+    onConfirm: (Double) -> Unit
+) {
     var amount by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            Button(onClick = {
-                val amountDouble = amount.toDoubleOrNull() ?: 0.0
-                if (amountDouble > 0) onConfirm(amountDouble)
-            }) { Text("Tambah") }
+            Button(
+                onClick = {
+                    val amountDouble = amount.toDoubleOrNull() ?: 0.0
+                    if (amountDouble > 0) onConfirm(amountDouble)
+                },
+                colors = if (isWithdraw) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
+            ) { 
+                Text(if (isWithdraw) "Kurangi" else "Tambah") 
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } },
-        title = { Text("Tambah ke $goalName") },
+        title = { Text(if (isWithdraw) "Kurangi dari $goalName" else "Tambah ke $goalName") },
         text = {
-            ModernTextField(value = amount, onValueChange = { amount = it }, label = "Jumlah Tabungan", icon = Icons.Rounded.Payments, isAmount = true)
+            ModernTextField(value = amount, onValueChange = { amount = it }, label = "Jumlah", icon = if (isWithdraw) Icons.Rounded.RemoveCircle else Icons.Rounded.Payments, isAmount = true)
         }
     )
 }
