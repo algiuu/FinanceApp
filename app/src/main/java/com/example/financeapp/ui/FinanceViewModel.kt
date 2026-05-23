@@ -29,7 +29,7 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     val savingGoals: StateFlow<List<SavingGoal>> = dao.getAllSavingGoalsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val geminiService = GeminiService("YOUR_API_KEY")
+    private val geminiService = GeminiService("AIzaSyAfxTSfUnWHltjlelMJeR1mZM_d9rp44wE")
 
     fun onAiAction(userInput: String, isChatMode: Boolean) {
         if (isChatMode) {
@@ -48,6 +48,13 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                     wallets.value.forEach { append("- ${it.name}: Rp ${it.balance}\n") }
                     append("\nTarget Menabung:\n")
                     savingGoals.value.forEach { append("- ${it.title}: ${it.saved}/${it.target}\n") }
+                    append("\nRiwayat Transaksi Terakhir:\n")
+                    activities.value.take(20).forEach { activity ->
+                        val typeStr = if (activity.type == "income") "Pemasukan" else "Pengeluaran"
+                        val walletName = wallets.value.find { it.id == activity.walletId }?.name ?: "Tidak Diketahui"
+                        val kategoriName = kategoris.value.find { it.id == activity.categoryId }?.name ?: "Tidak Diketahui"
+                        append("- ${activity.date}: ${activity.title} ($typeStr) Rp ${activity.amount} [Dompet: $walletName, Kategori: $kategoriName]\n")
+                    }
                 }
                 
                 // Kirim riwayat yang sudah ada + pesan baru
