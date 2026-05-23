@@ -54,7 +54,8 @@ data class SavingGoal(
     val title: String,
     val target: Double,
     val saved: Double,
-    val colorHex: String = "#6366F1"
+    val colorHex: String = "#6366F1",
+    val targetDate: String = "" // Format: YYYY-MM-DD
 )
 
 @Dao

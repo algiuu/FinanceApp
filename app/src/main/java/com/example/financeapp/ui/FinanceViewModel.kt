@@ -190,9 +190,9 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
         }
     }
 
-    fun insertSavingGoal(title: String, target: Double, saved: Double = 0.0) {
+    fun insertSavingGoal(title: String, target: Double, saved: Double = 0.0, targetDate: String = "") {
         viewModelScope.launch {
-            dao.insertSavingGoal(SavingGoal(title = title, target = target, saved = saved))
+            dao.insertSavingGoal(SavingGoal(title = title, target = target, saved = saved, targetDate = targetDate))
         }
     }
 

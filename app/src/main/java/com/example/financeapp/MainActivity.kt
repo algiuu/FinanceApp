@@ -1557,7 +1557,21 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column {
                                 Text(goal.title, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
-                                Text("Saving Progress", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val timeLeft = remember(goal.targetDate) {
+                                    try {
+                                        val targetDate = LocalDate.parse(goal.targetDate)
+                                        val now = LocalDate.now()
+                                        val days = java.time.temporal.ChronoUnit.DAYS.between(now, targetDate)
+                                        if (days >= 0) {
+                                            "$days hari lagi (${targetDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy"))})"
+                                        } else {
+                                            "Target lewat (${targetDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy"))})"
+                                        }
+                                    } catch (e: Exception) {
+                                        "No Deadline"
+                                    }
+                                }
+                                Text(timeLeft, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Box(
                                 modifier = Modifier.size(42.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
@@ -1599,8 +1613,8 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
     if (showAddDialog) {
         AddGoalDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { title, target, saved ->
-                viewModel.insertSavingGoal(title, target, saved)
+            onConfirm = { title, target, saved, date ->
+                viewModel.insertSavingGoal(title, target, saved, date)
                 showAddDialog = false
             }
         )
@@ -1610,8 +1624,8 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
         AddGoalDialog(
             initialGoal = goal,
             onDismiss = { goalToEdit = null },
-            onConfirm = { title, target, saved ->
-                viewModel.updateSavingGoal(goal.copy(title = title, target = target, saved = saved))
+            onConfirm = { title, target, saved, date ->
+                viewModel.updateSavingGoal(goal.copy(title = title, target = target, saved = saved, targetDate = date))
                 goalToEdit = null
             }
         )
@@ -1648,15 +1662,20 @@ fun TopUpGoalDialog(goalName: String, onDismiss: () -> Unit, onConfirm: (Double)
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddGoalDialog(
     initialGoal: SavingGoal? = null,
     onDismiss: () -> Unit, 
-    onConfirm: (String, Double, Double) -> Unit
+    onConfirm: (String, Double, Double, String) -> Unit
 ) {
     var title by remember { mutableStateOf(initialGoal?.title ?: "") }
     var target by remember { mutableStateOf(initialGoal?.target?.toString() ?: "") }
     var saved by remember { mutableStateOf(initialGoal?.saved?.toString() ?: "") }
+    var targetDate by remember { mutableStateOf(initialGoal?.targetDate ?: "") }
+    
+    var showDatePicker by remember { mutableStateOf(false) }
+    val dateState = rememberDatePickerState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1665,7 +1684,7 @@ fun AddGoalDialog(
                 onClick = {
                     val targetDouble = target.toDoubleOrNull() ?: 0.0
                     val savedDouble = saved.toDoubleOrNull() ?: 0.0
-                    if (title.isNotBlank()) onConfirm(title, targetDouble, savedDouble)
+                    if (title.isNotBlank()) onConfirm(title, targetDouble, savedDouble, targetDate)
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(16.dp)
@@ -1692,10 +1711,49 @@ fun AddGoalDialog(
                 ModernTextField(value = title, onValueChange = { title = it }, label = "Nama Barang/Impian", icon = Icons.Rounded.Stars)
                 ModernTextField(value = target, onValueChange = { target = it }, label = "Target Nominal", icon = Icons.Rounded.Flag, isAmount = true)
                 ModernTextField(value = saved, onValueChange = { saved = it }, label = "Sudah Terkumpul", icon = Icons.Rounded.AccountBalance, isAmount = true)
+                
+                Surface(
+                    onClick = { showDatePicker = true },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.Event, null, tint = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = if (targetDate.isEmpty()) "Pilih Tanggal Target" else targetDate,
+                            fontSize = 14.sp,
+                            color = if (targetDate.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
             }
         },
         shape = RoundedCornerShape(28.dp)
     )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    dateState.selectedDateMillis?.let {
+                        targetDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Batal") }
+            }
+        ) {
+            DatePicker(state = dateState)
+        }
+    }
 }
 
 @Composable
