@@ -1,5 +1,6 @@
 package com.example.financeapp.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.financeapp.data.*
@@ -15,6 +16,14 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     private val _aiLoading = MutableStateFlow(false)
     val aiLoading: StateFlow<Boolean> = _aiLoading
 
+    // StateFlow untuk memantau status API Key secara realtime di UI Compose
+    private val _userApiKey = MutableStateFlow("")
+    val userApiKey: StateFlow<String> = _userApiKey
+
+    // AMAN! Nama default sekarang diganti jadi "User" agar lebih universal 👤
+    private val _userName = MutableStateFlow("User")
+    val userName: StateFlow<String> = _userName
+
     private val chatHistory = mutableListOf<Pair<String, String>>()
 
     val wallets: StateFlow<List<Wallet>> = dao.getAllWalletsFlow()
@@ -29,17 +38,44 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     val savingGoals: StateFlow<List<SavingGoal>> = dao.getAllSavingGoalsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val geminiService = GeminiService("AIzaSyAfxTSfUnWHltjlelMJeR1mZM_d9rp44wE")
+    // Inisialisasi service kosongan tanpa hardcode string key developer
+    private val geminiService = GeminiService()
+
+    // Fungsi manajemen Profil & API Key menggunakan SharedPreferences internal HP Android
+    fun loadApiKey(context: Context) {
+        val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
+        _userApiKey.value = sharedPref.getString("gemini_api_key", "") ?: ""
+        // Di sini juga diganti default-nya jadi "User" kalau data SharedPreferences masih kosong
+        _userName.value = sharedPref.getString("user_profile_name", "User") ?: "User"
+    }
+
+    fun saveUserProfile(context: Context, newName: String, newKey: String) {
+        val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
+        sharedPref.edit().apply {
+            putString("user_profile_name", newName.ifBlank { "User" })
+            putString("gemini_api_key", newKey.trim())
+        }.apply()
+
+        _userName.value = newName.ifBlank { "User" }
+        _userApiKey.value = newKey.trim()
+    }
 
     fun onAiAction(userInput: String, isChatMode: Boolean) {
+        // Cek dulu apakah API Key sudah diisi oleh user atau belum
+        val currentKey = _userApiKey.value
+        if (currentKey.isBlank()) {
+            _aiResponse.value = "🔑 **API Key Gemini Belum Diatur!**\n\nSilakan ketuk logo **Profil** di pojok kanan atas beranda, lalu masukkan API Key Gemini Flash 2.5 milikmu sendiri agar fitur AI bisa digunakan."
+            return
+        }
+
         if (isChatMode) {
-            consultViaAI(userInput)
+            consultViaAI(currentKey, userInput)
         } else {
-            recordTransactionViaAI(userInput)
+            recordTransactionViaAI(currentKey, userInput)
         }
     }
 
-    private fun consultViaAI(userInput: String) {
+    private fun consultViaAI(apiKey: String, userInput: String) {
         viewModelScope.launch {
             _aiLoading.value = true
             try {
@@ -56,15 +92,12 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                         append("- ${activity.date}: ${activity.title} ($typeStr) Rp ${activity.amount} [Dompet: $walletName, Kategori: $kategoriName]\n")
                     }
                 }
-                
-                // Kirim riwayat yang sudah ada + pesan baru
-                val response = geminiService.consultFinancialAi(userInput, chatHistory, context)
-                
-                // Update riwayat lokal
+
+                val response = geminiService.consultFinancialAi(apiKey, userInput, chatHistory, context)
+
                 chatHistory.add("USER" to userInput)
                 chatHistory.add("FINANZAI" to response)
-                
-                // Batasi riwayat (misal 10 pasang pesan terakhir)
+
                 if (chatHistory.size > 20) {
                     repeat(2) { chatHistory.removeAt(0) }
                 }
@@ -78,30 +111,29 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
         }
     }
 
-    private fun recordTransactionViaAI(userInput: String) {
+    private fun recordTransactionViaAI(apiKey: String, userInput: String) {
         viewModelScope.launch {
             _aiLoading.value = true
             _aiResponse.value = ""
-            
+
             try {
                 val currentWallets = wallets.value
                 val currentKategoris = kategoris.value
-                
+
                 val walletsContext = currentWallets.joinToString { "ID: ${it.id} - Nama: ${it.name}" }
                 val kategorisContext = currentKategoris.joinToString { "ID: ${it.id} - Nama: ${it.name}" }
-                
-                val jsonResultRaw = geminiService.parseNaturalLanguageTransaction(userInput, walletsContext, kategorisContext)
+
+                val jsonResultRaw = geminiService.parseNaturalLanguageTransaction(apiKey, userInput, walletsContext, kategorisContext)
                 android.util.Log.d("FinanceViewModel", "Raw JSON from AI: $jsonResultRaw")
-                
+
                 val container = try {
                     Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(jsonResultRaw)
                 } catch (e: Exception) {
                     android.util.Log.e("FinanceViewModel", "JSON Parsing Error", e)
-                    // Jika gagal parsing, coba bersihkan markdown code blocks jika ada
                     val cleanedJson = jsonResultRaw.replace("```json", "").replace("```", "").trim()
                     Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(cleanedJson)
                 }
-                
+
                 var successCount = 0
                 val summaryReport = StringBuilder()
 
@@ -112,11 +144,11 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                 container.transactions.forEach { tx ->
                     val wallet = currentWallets.find { it.id == tx.walletId }
                     val kategori = currentKategoris.find { it.id == tx.categoryId }
-                    
+
                     if (wallet != null && kategori != null) {
                         if (tx.type == "expense" && wallet.balance < tx.amount) {
                             summaryReport.append("❌ Gagal mencatat \"${tx.title}\": Saldo di ${wallet.name} tidak cukup!\n\n")
-                            return@forEach 
+                            return@forEach
                         }
 
                         val activity = Activity(
@@ -127,7 +159,7 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                             type = tx.type,
                             date = java.time.LocalDate.now().toString()
                         )
-                        
+
                         dao.insertActivity(activity)
 
                         if (tx.type == "income") {
@@ -136,14 +168,14 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                             dao.substractWalletBalance(tx.walletId, tx.amount)
                             dao.addCategorySpent(tx.categoryId, tx.amount)
                         }
-                        
+
                         summaryReport.append("✅ Berhasil mencatat \"${tx.title}\" senilai Rp ${tx.amount}\n\n")
                         successCount++
                     }
                 }
 
-                _aiResponse.value = if (successCount > 0) "⚡ **Catat Kilat Berhasil!**\n\n$summaryReport" 
-                                   else "🤖 AI tidak menemukan transaksi valid atau saldo tidak cukup.\n\n$summaryReport"
+                _aiResponse.value = if (successCount > 0) "⚡ **Catat Kilat Berhasil!**\n\n$summaryReport"
+                else "🤖 AI tidak menemukan transaksi valid atau saldo tidak cukup.\n\n$summaryReport"
 
             } catch (e: Exception) {
                 android.util.Log.e("FinanceViewModel", "Error in AI processing", e)
@@ -236,7 +268,6 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
 
     fun updateActivity(oldActivity: Activity, newActivity: Activity) {
         viewModelScope.launch {
-            // Revert old changes
             if (oldActivity.type == "income") {
                 dao.addWalletBalance(oldActivity.walletId, -oldActivity.amount)
             } else {
@@ -244,7 +275,6 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                 dao.deductCategorySpent(oldActivity.categoryId, oldActivity.amount)
             }
 
-            // Apply new changes
             if (newActivity.type == "income") {
                 dao.addWalletBalance(newActivity.walletId, newActivity.amount)
             } else {
@@ -266,7 +296,7 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
             dao.addSavingGoalAmount(goalId, amount)
         }
     }
-    
+
     fun clearAiResponse() {
         _aiResponse.value = ""
         chatHistory.clear()

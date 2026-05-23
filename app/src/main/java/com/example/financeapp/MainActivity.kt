@@ -19,7 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
@@ -66,7 +65,7 @@ import java.util.*
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         val db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java, "finance-db"
@@ -84,6 +83,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 )
+
+                viewModel.loadApiKey(applicationContext)
 
                 MainAppScreen(viewModel)
             }
@@ -125,7 +126,7 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
                 val screens = remember { listOf(Screen.Dashboard, Screen.Wallets, Screen.Transactions, Screen.AI, Screen.Goals, Screen.Categories) }
                 screens.forEach { screen ->
                     val isSelected = currentScreen == screen
-                    
+
                     val animatedIconSize by animateDpAsState(
                         targetValue = if (isSelected) 28.dp else 22.dp,
                         animationSpec = spring(
@@ -136,22 +137,22 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
                     )
 
                     NavigationBarItem(
-                        icon = { 
+                        icon = {
                             Icon(
-                                screen.icon, 
+                                screen.icon,
                                 contentDescription = screen.title,
                                 modifier = Modifier.size(animatedIconSize)
-                            ) 
+                            )
                         },
-                        label = { 
+                        label = {
                             Text(
-                                screen.title, 
-                                fontSize = 9.sp, 
+                                screen.title,
+                                fontSize = 9.sp,
                                 fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Visible,
                                 softWrap = false
-                            ) 
+                            )
                         },
                         selected = isSelected,
                         alwaysShowLabel = true,
@@ -186,16 +187,17 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     val wallets by viewModel.wallets.collectAsState()
     val activities by viewModel.activities.collectAsState()
     val kategoris by viewModel.kategoris.collectAsState()
-    
+    val userName by viewModel.userName.collectAsState()
+
+    var showProfileDialog by remember { mutableStateOf(false) }
     val totalBalance = remember(wallets) { wallets.sumOf { it.balance } }
-    
-    // Filter Aktivitas Bulan Ini (Reset tiap tanggal 1)
+
     val currentMonthActivities = remember(activities) {
         val now = LocalDate.now()
         val yearMonth = String.format("%04d-%02d", now.year, now.monthValue)
         activities.filter { it.date.startsWith(yearMonth) }
     }
-    
+
     val totalIncome = remember(currentMonthActivities) { currentMonthActivities.filter { it.type == "income" }.sumOf { it.amount } }
     val totalExpense = remember(currentMonthActivities) { currentMonthActivities.filter { it.type == "expense" }.sumOf { it.amount } }
     val netMonthly = totalIncome - totalExpense
@@ -220,7 +222,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             .padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(28.dp)
     ) {
-        // Top Header
+        // Top Header dengan Logo Bulat Sempurna
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -234,7 +236,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    "Algi ✨",
+                    "$userName ✨",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -242,9 +244,26 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                 )
             }
 
+            // MODIFIKASI: Menggunakan kliping CircleShape penuh agar logo membulat mutlak
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                    .clickable { showProfileDialog = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = userName.take(2).uppercase(),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
 
-        // Main Balance Card (Visual Hero)
+        // Main Balance Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -258,7 +277,6 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     .background(primaryGradient)
                     .padding(24.dp)
             ) {
-                // Background Pattern (Subtle circles)
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawCircle(
                         color = Color.White.copy(alpha = 0.05f),
@@ -294,13 +312,11 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Surplus
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Surplus", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
                             Text(formatRp(totalIncome).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFF4ADE80), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        
-                        // Separator & Net
+
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(horizontal = 4.dp)
@@ -322,7 +338,6 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
                         }
 
-                        // Defisit
                         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                             Text("Defisit", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
                             Text(formatRp(totalExpense).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
@@ -332,14 +347,14 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             }
         }
 
-        // Dynamic Categories Grid / Alert
+        // Budget Watch
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("Budget Watch", Icons.Rounded.Analytics)
-            
+
             budgetKategoris.take(3).forEach { cat ->
                 val ratio = remember(cat.spent, cat.budget) { (cat.spent / cat.budget).toFloat().coerceIn(0f, 1f) }
                 val color = if (ratio > 0.9f) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
-                
+
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -378,12 +393,99 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         // Recent Wallets
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("My Assets", Icons.Rounded.AccountBalanceWallet)
-            
+
             wallets.forEach { wallet ->
                 WalletListCard(wallet)
             }
         }
     }
+
+    if (showProfileDialog) {
+        UserProfileDialog(
+            viewModel = viewModel,
+            onDismiss = { showProfileDialog = false }
+        )
+    }
+}
+
+@Composable
+fun UserProfileDialog(
+    viewModel: FinanceViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val apiKey by viewModel.userApiKey.collectAsState()
+    val userName by viewModel.userName.collectAsState()
+
+    var textInputName by remember { mutableStateOf(userName) }
+    var textInputKey by remember { mutableStateOf(apiKey) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    viewModel.saveUserProfile(context, textInputName.trim(), textInputKey.trim())
+                    android.widget.Toast.makeText(context, "Profil Berhasil Diperbarui! 🚀", android.widget.Toast.LENGTH_SHORT).show()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text("Simpan Perubahan", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Batal", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.ManageAccounts, null, tint = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Pengaturan Developer 🛠️", fontSize = 20.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 8.dp)) {
+                OutlinedTextField(
+                    value = textInputName,
+                    onValueChange = { textInputName = it },
+                    label = { Text("Nama Panggilan") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = "", tint = MaterialTheme.colorScheme.primary) }
+                )
+
+                OutlinedTextField(
+                    value = textInputKey,
+                    onValueChange = { textInputKey = it },
+                    label = { Text("Gemini API Key") },
+                    placeholder = { Text("AIzaSy...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    leadingIcon = { Icon(Icons.Rounded.VpnKey, contentDescription = "", tint = MaterialTheme.colorScheme.primary) }
+                )
+
+                Text(
+                    text = "Gunakan kunci mandiri dari Google AI Studio agar kuota pemrosesan AI terpisah secara personal dan bebas dari antrean limit.",
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }
 
 @Composable
@@ -464,7 +566,7 @@ fun WalletsScreen(viewModel: FinanceViewModel) {
     val wallets by viewModel.wallets.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var walletToEdit by remember { mutableStateOf<Wallet?>(null) }
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -483,7 +585,7 @@ fun WalletsScreen(viewModel: FinanceViewModel) {
                 Text("New", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
-        
+
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             items(
                 items = wallets,
@@ -550,7 +652,7 @@ fun WalletsScreen(viewModel: FinanceViewModel) {
 @Composable
 fun AddWalletDialog(
     initialWallet: Wallet? = null,
-    onDismiss: () -> Unit, 
+    onDismiss: () -> Unit,
     onConfirm: (String, Double, String) -> Unit
 ) {
     var name by remember { mutableStateOf(initialWallet?.name ?: "") }
@@ -558,7 +660,7 @@ fun AddWalletDialog(
     var color by remember { mutableStateOf(initialWallet?.colorHex ?: "#10B981") }
 
     val colorPresets = listOf(
-        "#10B981", "#6366F1", "#F59E0B", "#EF4444", 
+        "#10B981", "#6366F1", "#F59E0B", "#EF4444",
         "#3B82F6", "#8B5CF6", "#EC4899", "#06B6D4",
         "#84CC16", "#71717A"
     )
@@ -606,7 +708,7 @@ fun AddWalletDialog(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 8.dp)) {
                 ModernTextField(value = name, onValueChange = { name = it }, label = "Nama Dompet", icon = Icons.Rounded.Edit)
                 ModernTextField(value = balance, onValueChange = { balance = it }, label = "Saldo Awal", icon = Icons.Rounded.Payments, isAmount = true)
-                
+
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Pilih Warna Tema", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Row(
@@ -659,7 +761,6 @@ fun ModernTextField(
         value = value,
         onValueChange = { newValue ->
             if (isAmount) {
-                // Hanya izinkan angka
                 if (newValue.all { it.isDigit() }) onValueChange(newValue)
             } else {
                 onValueChange(newValue)
@@ -723,7 +824,7 @@ class CurrencyVisualTransformation : VisualTransformation {
                 val transformedLength = formattedText.length
                 if (offset <= 0) return 0
                 if (offset >= transformedLength) return originalLength
-                
+
                 var originalOffset = 0
                 var transformedOffset = 0
                 while (originalOffset < originalLength && transformedOffset < offset) {
@@ -752,21 +853,21 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
 
     var showAddDialog by remember { mutableStateOf(false) }
     var activityToEdit by remember { mutableStateOf<Activity?>(null) }
-    
+
     var showDateRangePicker by remember { mutableStateOf(false) }
     var dateRangeState = rememberDateRangePickerState()
-    
+
     val filteredActivities = remember(activities, dateRangeState.selectedStartDateMillis, dateRangeState.selectedEndDateMillis) {
         val start = dateRangeState.selectedStartDateMillis
         val end = dateRangeState.selectedEndDateMillis
-        
+
         if (start != null && end != null) {
             val startDate = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
             val endDate = Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalDate()
-            
+
             activities.filter {
                 val actDate = try { LocalDate.parse(it.date) } catch(e: Exception) { null }
-                actDate != null && (actDate.isAfter(startDate) || actDate.isEqual(startDate)) && 
+                actDate != null && (actDate.isAfter(startDate) || actDate.isEqual(startDate)) &&
                         (actDate.isBefore(endDate) || actDate.isEqual(endDate))
             }
         } else {
@@ -807,19 +908,17 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
                     color = MaterialTheme.colorScheme.onBackground,
                     letterSpacing = (-0.5).sp
                 )
-                
+
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (dateRangeState.selectedStartDateMillis != null) {
                         IconButton(
-                            onClick = { 
-                                dateRangeState.setSelection(null, null)
-                            },
+                            onClick = { dateRangeState.setSelection(null, null) },
                             modifier = Modifier.background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f), CircleShape)
                         ) {
                             Icon(Icons.Rounded.FilterListOff, "Clear Filter", tint = MaterialTheme.colorScheme.error)
                         }
                     }
-                    
+
                     IconButton(
                         onClick = { showDateRangePicker = true },
                         modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), CircleShape)
@@ -828,7 +927,7 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
                     }
                 }
             }
-            
+
             if (dateRangeState.selectedStartDateMillis != null && dateRangeState.selectedEndDateMillis != null) {
                 val start = Instant.ofEpochMilli(dateRangeState.selectedStartDateMillis!!).atZone(ZoneId.systemDefault()).toLocalDate()
                 val end = Instant.ofEpochMilli(dateRangeState.selectedEndDateMillis!!).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -845,26 +944,26 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
                     )
                 }
             }
-            
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(bottom = 80.dp)
-        ) {
-            items(
-                items = filteredActivities,
-                key = { it.id } // Optimization: provide a stable key
-            ) { act ->
-                val cat = categoryMap[act.categoryId]
-                val wal = walletMap[act.walletId]
-                TransactionListCard(
-                    activity = act, 
-                    category = cat, 
-                    wallet = wal,
-                    onDelete = { viewModel.deleteActivity(act) },
-                    onEdit = { activityToEdit = act }
-                )
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                items(
+                    items = filteredActivities,
+                    key = { it.id }
+                ) { act ->
+                    val cat = categoryMap[act.categoryId]
+                    val wal = walletMap[act.walletId]
+                    TransactionListCard(
+                        activity = act,
+                        category = cat,
+                        wallet = wal,
+                        onDelete = { viewModel.deleteActivity(act) },
+                        onEdit = { activityToEdit = act }
+                    )
+                }
             }
-        }
         }
     }
 
@@ -900,17 +999,13 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
         DatePickerDialog(
             onDismissRequest = { showDateRangePicker = false },
             confirmButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("Pilih")
-                }
+                TextButton(onClick = { showDateRangePicker = false }) { Text("Pilih") }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     dateRangeState.setSelection(null, null)
-                    showDateRangePicker = false 
-                }) {
-                    Text("Batal")
-                }
+                    showDateRangePicker = false
+                }) { Text("Batal") }
             }
         ) {
             DateRangePicker(
@@ -931,8 +1026,8 @@ fun TransactionListCard(
     onEdit: () -> Unit
 ) {
     val isExpense = remember(activity.type) { activity.type == "expense" }
-    val formattedAmount = remember(activity.amount, isExpense) { 
-        (if (isExpense) "-" else "+") + formatRp(activity.amount) 
+    val formattedAmount = remember(activity.amount, isExpense) {
+        (if (isExpense) "-" else "+") + formatRp(activity.amount)
     }
 
     Surface(
@@ -955,7 +1050,7 @@ fun TransactionListCard(
             ) {
                 Text(category?.emoji ?: "🏷️", fontSize = 22.sp)
             }
-            
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     activity.title,
@@ -966,21 +1061,21 @@ fun TransactionListCard(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Row(
-                    verticalAlignment = Alignment.CenterVertically, 
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        activity.date, 
-                        fontSize = 11.sp, 
+                        activity.date,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
                     Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(MaterialTheme.colorScheme.outlineVariant))
                     Text(
-                        wallet?.name ?: "Wallet", 
-                        fontSize = 11.sp, 
-                        color = MaterialTheme.colorScheme.primary, 
+                        wallet?.name ?: "Wallet",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -988,7 +1083,7 @@ fun TransactionListCard(
                     )
                 }
             }
-            
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1005,9 +1100,9 @@ fun TransactionListCard(
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        Icons.Rounded.DeleteOutline, 
-                        "", 
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), 
+                        Icons.Rounded.DeleteOutline,
+                        "",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -1037,7 +1132,7 @@ fun AddTransactionDialog(
         modifier = Modifier.padding(24.dp),
         confirmButton = {
             Button(
-                onClick = { 
+                onClick = {
                     val amountDouble = amount.toDoubleOrNull() ?: 0.0
                     if (title.isNotBlank() && amountDouble > 0) {
                         onConfirm(title, amountDouble, type, walletId, categoryId)
@@ -1065,7 +1160,6 @@ fun AddTransactionDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Type Selector (Expense/Income)
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)).padding(4.dp)
                 ) {
@@ -1085,11 +1179,10 @@ fun AddTransactionDialog(
 
                 ModernTextField(value = title, onValueChange = { title = it }, label = "Judul", icon = Icons.Rounded.Edit)
                 ModernTextField(value = amount, onValueChange = { amount = it }, label = "Nominal", icon = Icons.Rounded.Payments, isAmount = true)
-                
+
                 Text("Pilih Sumber & Kategori", fontSize = 11.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-                
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Wallet Dropdown-like Selector
                     Surface(
                         modifier = Modifier.weight(1f).height(100.dp),
                         shape = RoundedCornerShape(16.dp),
@@ -1112,7 +1205,6 @@ fun AddTransactionDialog(
                         }
                     }
 
-                    // Category Selector
                     Surface(
                         modifier = Modifier.weight(1f).height(100.dp),
                         shape = RoundedCornerShape(16.dp),
@@ -1155,7 +1247,6 @@ fun AiScreen(viewModel: FinanceViewModel) {
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Decorative background elements
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCircle(
                 brush = Brush.radialGradient(
@@ -1172,7 +1263,6 @@ fun AiScreen(viewModel: FinanceViewModel) {
                 .padding(horizontal = 24.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Header with AI Branding
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1194,7 +1284,6 @@ fun AiScreen(viewModel: FinanceViewModel) {
                     )
                 }
 
-                // Modern Segmented Toggle
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -1207,9 +1296,9 @@ fun AiScreen(viewModel: FinanceViewModel) {
                                 modifier = Modifier
                                     .clip(CircleShape)
                                     .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
-                                    .clickable { 
+                                    .clickable {
                                         aiMode = mode
-                                        viewModel.clearAiResponse() 
+                                        viewModel.clearAiResponse()
                                     }
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
@@ -1225,7 +1314,6 @@ fun AiScreen(viewModel: FinanceViewModel) {
                 }
             }
 
-            // Contextual Suggestions / Help
             if (aiMode == AiMode.CHAT) {
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -1277,7 +1365,6 @@ fun AiScreen(viewModel: FinanceViewModel) {
                 }
             }
 
-            // Result Display Area
             Surface(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 shape = RoundedCornerShape(32.dp),
@@ -1305,11 +1392,10 @@ fun AiScreen(viewModel: FinanceViewModel) {
                         }
                     } else if (aiResponse.isNotEmpty()) {
                         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                            // Formatting the AI Response to look cleaner
                             val cleanedResponse = aiResponse
-                                .replace(Regex("#+"), "") // Hapus header markdown
-                                .replace(Regex("\\*\\*"), "") // Hapus bold markdown
-                                .replace(Regex("\\*"), "•") // Ubah bullet markdown jadi bullet beneran
+                                .replace(Regex("#+"), "")
+                                .replace(Regex("\\*\\*"), "")
+                                .replace(Regex("\\*"), "•")
                                 .trim()
 
                             cleanedResponse.split("\n\n").forEach { paragraph ->
@@ -1343,9 +1429,9 @@ fun AiScreen(viewModel: FinanceViewModel) {
                                 modifier = Modifier.size(80.dp)
                             )
                             Text(
-                                if (aiMode == AiMode.CHAT) 
-                                    "Tanyakan apa saja tentang keuanganmu.\nSaya akan bantu menganalisis!" 
-                                else 
+                                if (aiMode == AiMode.CHAT)
+                                    "Tanyakan apa saja tentang keuanganmu.\nSaya akan bantu menganalisis!"
+                                else
                                     "Catat banyak transaksi sekaligus\nhanya dengan satu kalimat.",
                                 textAlign = TextAlign.Center,
                                 fontSize = 14.sp,
@@ -1358,7 +1444,6 @@ fun AiScreen(viewModel: FinanceViewModel) {
                 }
             }
 
-            // Premium Input Bar
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 shape = RoundedCornerShape(24.dp),
@@ -1374,11 +1459,11 @@ fun AiScreen(viewModel: FinanceViewModel) {
                     TextField(
                         value = userPrompt,
                         onValueChange = { userPrompt = it },
-                        placeholder = { 
+                        placeholder = {
                             Text(
                                 if (aiMode == AiMode.CHAT) "Tanya AI..." else "Catat cepat...",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            ) 
+                            )
                         },
                         modifier = Modifier.weight(1f),
                         colors = TextFieldDefaults.colors(
@@ -1389,7 +1474,7 @@ fun AiScreen(viewModel: FinanceViewModel) {
                         ),
                         maxLines = 4
                     )
-                    
+
                     Surface(
                         modifier = Modifier
                             .size(48.dp)
@@ -1420,7 +1505,7 @@ fun CategoriesScreen(viewModel: FinanceViewModel) {
     val kategoris by viewModel.kategoris.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var categoryToEdit by remember { mutableStateOf<Kategori?>(null) }
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1436,7 +1521,7 @@ fun CategoriesScreen(viewModel: FinanceViewModel) {
                 Icon(Icons.Rounded.Add, "", tint = MaterialTheme.colorScheme.primary)
             }
         }
-        
+
         Text("AI automatically detects your custom categories ⚡", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1498,7 +1583,7 @@ fun CategoriesScreen(viewModel: FinanceViewModel) {
 @Composable
 fun AddCategoryDialog(
     initialCategory: Kategori? = null,
-    onDismiss: () -> Unit, 
+    onDismiss: () -> Unit,
     onConfirm: (String, Double, String, String) -> Unit
 ) {
     var name by remember { mutableStateOf(initialCategory?.name ?: "") }
@@ -1507,7 +1592,7 @@ fun AddCategoryDialog(
     var color by remember { mutableStateOf(initialCategory?.colorHex ?: "#10B981") }
 
     val colorPresets = listOf(
-        "#10B981", "#6366F1", "#F59E0B", "#EF4444", 
+        "#10B981", "#6366F1", "#F59E0B", "#EF4444",
         "#3B82F6", "#8B5CF6", "#EC4899", "#06B6D4",
         "#84CC16", "#71717A"
     )
@@ -1544,12 +1629,12 @@ fun AddCategoryDialog(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 ModernTextField(value = name, onValueChange = { name = it }, label = "Nama Kategori", icon = Icons.Rounded.Tag)
                 ModernTextField(value = budget, onValueChange = { budget = it }, label = "Limit Budget (Bulanan)", icon = Icons.Rounded.Analytics, isAmount = true)
-                
+
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(modifier = Modifier.weight(0.4f)) {
                         ModernTextField(value = emoji, onValueChange = { emoji = it }, label = "Emoji", icon = Icons.Rounded.Mood)
                     }
-                    
+
                     Column(modifier = Modifier.weight(0.6f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Warna", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Row(
@@ -1590,7 +1675,7 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
     var goalToEdit by remember { mutableStateOf<SavingGoal?>(null) }
     var goalToTopUp by remember { mutableStateOf<SavingGoal?>(null) }
     var goalToWithdraw by remember { mutableStateOf<SavingGoal?>(null) }
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1606,14 +1691,14 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
                 Icon(Icons.Rounded.Add, "", tint = MaterialTheme.colorScheme.primary)
             }
         }
-        
+
         LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp)) {
             items(
                 items = goals,
                 key = { it.id }
             ) { goal ->
-                val pct = remember(goal.saved, goal.target) { 
-                    if (goal.target > 0) (goal.saved / goal.target).toFloat().coerceIn(0f, 1f) else 0f 
+                val pct = remember(goal.saved, goal.target) {
+                    if (goal.target > 0) (goal.saved / goal.target).toFloat().coerceIn(0f, 1f) else 0f
                 }
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable { goalToEdit = goal },
@@ -1648,7 +1733,7 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
                                 Text("${(pct * 100).toInt()}%", fontSize = 11.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                             }
                         }
-                        
+
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             LinearProgressIndicator(
                                 progress = { pct },
@@ -1661,7 +1746,7 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
                                 Text(formatRp(goal.target), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = { goalToWithdraw = goal }) {
                                 Icon(Icons.Rounded.Remove, "", modifier = Modifier.size(16.dp))
@@ -1705,24 +1790,24 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
         )
     }
 
-    goalToWithdraw?.let { goal ->
+    if (goalToWithdraw != null) {
         TopUpGoalDialog(
-            goalName = goal.title,
+            goalName = goalToWithdraw!!.title,
             isWithdraw = true,
             onDismiss = { goalToWithdraw = null },
             onConfirm = { amount ->
-                viewModel.addSavingGoalAmount(goal.id, -amount)
+                viewModel.addSavingGoalAmount(goalToWithdraw!!.id, -amount)
                 goalToWithdraw = null
             }
         )
     }
 
-    goalToTopUp?.let { goal ->
+    if (goalToTopUp != null) {
         TopUpGoalDialog(
-            goalName = goal.title,
+            goalName = goalToTopUp!!.title,
             onDismiss = { goalToTopUp = null },
             onConfirm = { amount ->
-                viewModel.addSavingGoalAmount(goal.id, amount)
+                viewModel.addSavingGoalAmount(goalToTopUp!!.id, amount)
                 goalToTopUp = null
             }
         )
@@ -1731,9 +1816,9 @@ fun GoalsScreen(viewModel: FinanceViewModel) {
 
 @Composable
 fun TopUpGoalDialog(
-    goalName: String, 
+    goalName: String,
     isWithdraw: Boolean = false,
-    onDismiss: () -> Unit, 
+    onDismiss: () -> Unit,
     onConfirm: (Double) -> Unit
 ) {
     var amount by remember { mutableStateOf("") }
@@ -1746,8 +1831,8 @@ fun TopUpGoalDialog(
                     if (amountDouble > 0) onConfirm(amountDouble)
                 },
                 colors = if (isWithdraw) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
-            ) { 
-                Text(if (isWithdraw) "Kurangi" else "Tambah") 
+            ) {
+                Text(if (isWithdraw) "Kurangi" else "Tambah")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } },
@@ -1762,39 +1847,38 @@ fun TopUpGoalDialog(
 @Composable
 fun AddGoalDialog(
     initialGoal: SavingGoal? = null,
-    onDismiss: () -> Unit, 
+    onDismiss: () -> Unit,
     onConfirm: (String, Double, Double, String) -> Unit
 ) {
     var title by remember { mutableStateOf(initialGoal?.title ?: "") }
     var target by remember { mutableStateOf(initialGoal?.target?.toString() ?: "") }
     var saved by remember { mutableStateOf(initialGoal?.saved?.toString() ?: "") }
     var targetDate by remember { mutableStateOf(initialGoal?.targetDate ?: "") }
-    
+
     var showDatePicker by remember { mutableStateOf(false) }
     val dateState = rememberDatePickerState()
 
-    // Kalkulasi Saran Menabung
     val suggestionText = remember(target, saved, targetDate) {
         try {
             val targetNominal = target.toDoubleOrNull() ?: 0.0
             val savedNominal = saved.toDoubleOrNull() ?: 0.0
             val remaining = targetNominal - savedNominal
-            
-            if (remaining <= 0 || targetDate.isEmpty()) "" 
+
+            if (remaining <= 0 || targetDate.isEmpty()) ""
             else {
                 val tDate = LocalDate.parse(targetDate)
                 val now = LocalDate.now()
                 val days = java.time.temporal.ChronoUnit.DAYS.between(now, tDate)
-                
+
                 if (days <= 0) "Deadline sudah lewat!"
                 else {
                     val daily = remaining / days
                     val weekly = remaining / (days / 7.0).coerceAtLeast(1.0)
                     val monthly = remaining / (days / 30.0).coerceAtLeast(1.0)
-                    
+
                     "Saran: Rp ${formatRp(daily).replace("Rp ", "")}/hari, " +
-                    "Rp ${formatRp(weekly).replace("Rp ", "")}/minggu, " +
-                    "atau Rp ${formatRp(monthly).replace("Rp ", "")}/bulan"
+                            "Rp ${formatRp(weekly).replace("Rp ", "")}/minggu, " +
+                            "atau Rp ${formatRp(monthly).replace("Rp ", "")}/bulan"
                 }
             }
         } catch (e: Exception) { "" }
@@ -1834,7 +1918,7 @@ fun AddGoalDialog(
                 ModernTextField(value = title, onValueChange = { title = it }, label = "Nama Barang/Impian", icon = Icons.Rounded.Stars)
                 ModernTextField(value = target, onValueChange = { target = it }, label = "Target Nominal", icon = Icons.Rounded.Flag, isAmount = true)
                 ModernTextField(value = saved, onValueChange = { saved = it }, label = "Sudah Terkumpul", icon = Icons.Rounded.AccountBalance, isAmount = true)
-                
+
                 Surface(
                     onClick = { showDatePicker = true },
                     shape = RoundedCornerShape(16.dp),

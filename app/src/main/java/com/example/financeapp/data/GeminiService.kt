@@ -5,9 +5,10 @@ import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.delay
 
-class GeminiService(apiKey: String) {
+class GeminiService {
 
-    private val generativeModelJson = GenerativeModel(
+    // Helper untuk membuat model JSON secara runtime sesuai API Key user
+    private fun getModelJson(apiKey: String) = GenerativeModel(
         modelName = "gemini-2.5-flash",
         apiKey = apiKey,
         generationConfig = generationConfig {
@@ -15,12 +16,18 @@ class GeminiService(apiKey: String) {
         }
     )
 
-    private val generativeModelChat = GenerativeModel(
+    // Helper untuk membuat model Chat biasa secara runtime sesuai API Key user
+    private fun getModelChat(apiKey: String) = GenerativeModel(
         modelName = "gemini-2.5-flash",
         apiKey = apiKey
     )
 
-    suspend fun consultFinancialAi(userInput: String, history: List<Pair<String, String>>, context: String): String {
+    suspend fun consultFinancialAi(
+        apiKey: String,
+        userInput: String,
+        history: List<Pair<String, String>>,
+        context: String
+    ): String {
         val systemInstructions = """
             Anda adalah asisten keuangan pribadi bernama FinanzAI. 
             Gunakan data keuangan berikut sebagai konteks awal untuk memberikan saran yang relevan:
@@ -39,7 +46,8 @@ class GeminiService(apiKey: String) {
         var delayMillis = 1500L
         while (retries > 0) {
             try {
-                val response = generativeModelChat.generateContent(systemInstructions)
+                // Inisialisasi model menggunakan API Key kiriman ViewModel
+                val response = getModelChat(apiKey).generateContent(systemInstructions)
                 return response.text ?: "Maaf, saya tidak bisa memberikan jawaban saat ini."
             } catch (e: Exception) {
                 android.util.Log.e("GeminiService", "Error in consultFinancialAi", e)
@@ -52,8 +60,12 @@ class GeminiService(apiKey: String) {
         return "Gagal terhubung ke AI."
     }
 
-    // Fungsi tangguh: Kalau model sibuk/overloaded, bakal otomatis nyoba lagi sampai 3 kali 🛠️
-    suspend fun parseNaturalLanguageTransaction(userInput: String, walletsContext: String, kategorisContext: String): String {
+    suspend fun parseNaturalLanguageTransaction(
+        apiKey: String,
+        userInput: String,
+        walletsContext: String,
+        kategorisContext: String
+    ): String {
         val systemInstructions = """
             Anda adalah asisten keuangan cerdas. Ekstrak transaksi dari input pengguna menjadi format JSON yang sangat ketat.
             
@@ -87,17 +99,17 @@ class GeminiService(apiKey: String) {
 
         while (retries > 0) {
             try {
-                val response = generativeModelJson.generateContent(
+                // Inisialisasi model berformat JSON menggunakan API Key kiriman ViewModel
+                val response = getModelJson(apiKey).generateContent(
                     content {
                         text(systemInstructions)
                         text(userInput)
                     }
                 )
                 val result = response.text ?: throw Exception("Respons teks kosong")
-                
-                // Pastikan response mengandung JSON yang valid
+
                 if (!result.trim().startsWith("{")) {
-                     throw Exception("Format respons bukan JSON valid")
+                    throw Exception("Format respons bukan JSON valid")
                 }
 
                 android.util.Log.d("GeminiService", "Response from AI: $result")
@@ -109,7 +121,7 @@ class GeminiService(apiKey: String) {
                     throw e
                 }
                 delay(delayMillis)
-                delayMillis *= 2 
+                delayMillis *= 2
             }
         }
         throw Exception("Gagal memproses transaksi.")
