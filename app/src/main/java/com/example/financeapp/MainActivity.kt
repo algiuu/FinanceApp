@@ -1677,6 +1677,33 @@ fun AddGoalDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     val dateState = rememberDatePickerState()
 
+    // Kalkulasi Saran Menabung
+    val suggestionText = remember(target, saved, targetDate) {
+        try {
+            val targetNominal = target.toDoubleOrNull() ?: 0.0
+            val savedNominal = saved.toDoubleOrNull() ?: 0.0
+            val remaining = targetNominal - savedNominal
+            
+            if (remaining <= 0 || targetDate.isEmpty()) "" 
+            else {
+                val tDate = LocalDate.parse(targetDate)
+                val now = LocalDate.now()
+                val days = java.time.temporal.ChronoUnit.DAYS.between(now, tDate)
+                
+                if (days <= 0) "Deadline sudah lewat!"
+                else {
+                    val daily = remaining / days
+                    val weekly = remaining / (days / 7.0).coerceAtLeast(1.0)
+                    val monthly = remaining / (days / 30.0).coerceAtLeast(1.0)
+                    
+                    "Saran: Rp ${formatRp(daily).replace("Rp ", "")}/hari, " +
+                    "Rp ${formatRp(weekly).replace("Rp ", "")}/minggu, " +
+                    "atau Rp ${formatRp(monthly).replace("Rp ", "")}/bulan"
+                }
+            }
+        } catch (e: Exception) { "" }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -1729,6 +1756,19 @@ fun AddGoalDialog(
                             fontSize = 14.sp,
                             color = if (targetDate.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                         )
+                    }
+                }
+
+                if (suggestionText.isNotEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.Lightbulb, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+                            Text(suggestionText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
