@@ -1,8 +1,12 @@
 package com.example.financeapp
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -36,6 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -56,9 +61,12 @@ import java.time.format.DateTimeFormatter
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.room.Room
+import coil.compose.AsyncImage
 import com.example.financeapp.data.*
 import com.example.financeapp.ui.FinanceViewModel
 import com.example.financeapp.ui.theme.FinanceAppTheme
+import java.io.File
+import java.io.FileOutputStream
 import java.text.NumberFormat
 import java.util.*
 
@@ -114,6 +122,11 @@ enum class AiMode(val label: String) {
 @Composable
 fun MainAppScreen(viewModel: FinanceViewModel) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
+    var initialAiMode by remember { mutableStateOf(AiMode.AUTO_RECORD) }
+    var showManualTransactionDialogFromHome by remember { mutableStateOf(false) }
+
+    val wallets by viewModel.wallets.collectAsState()
+    val kategoris by viewModel.kategoris.collectAsState()
 
     Scaffold(
         bottomBar = {
@@ -156,7 +169,12 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
                         },
                         selected = isSelected,
                         alwaysShowLabel = true,
-                        onClick = { currentScreen = screen },
+                        onClick = {
+                            if (screen == Screen.AI) {
+                                initialAiMode = AiMode.AUTO_RECORD // Reset paksa ke quick mode tiap pindah dari nav bar
+                            }
+                            currentScreen = screen
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
                             selectedTextColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
@@ -171,23 +189,70 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             when (currentScreen) {
-                Screen.Dashboard -> DashboardScreen(viewModel)
+                Screen.Dashboard -> DashboardScreen(
+                    viewModel = viewModel,
+                    onNavigateToAiQuick = {
+                        initialAiMode = AiMode.AUTO_RECORD
+                        currentScreen = Screen.AI
+                    },
+                    onTriggerAddTransaction = {
+                        showManualTransactionDialogFromHome = true
+                    }
+                )
                 Screen.Wallets -> WalletsScreen(viewModel)
                 Screen.Transactions -> TransactionsScreen(viewModel)
-                Screen.AI -> AiScreen(viewModel)
+                Screen.AI -> AiScreen(viewModel, initialAiMode, onModeChanged = { initialAiMode = it })
                 Screen.Goals -> GoalsScreen(viewModel)
                 Screen.Categories -> CategoriesScreen(viewModel)
+            }
+
+            if (showManualTransactionDialogFromHome) {
+                AddTransactionDialog(
+                    wallets = wallets,
+                    categories = kategoris,
+                    onDismiss = { showManualTransactionDialogFromHome = false },
+                    onConfirm = { title, amount, type, walletId, catId ->
+                        viewModel.recordManualTransaction(title, amount, type, walletId, catId)
+                        showManualTransactionDialogFromHome = false
+                    }
+                )
             }
         }
     }
 }
 
+// Fungsi sakti buat nge-copy foto dari galeri ke storage internal aplikasi secara permanen
+fun saveImageToInternalStorage(context: Context, uri: Uri): String {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val file = File(context.filesDir, "user_profile_avatar.jpg")
+        val outputStream = FileOutputStream(file)
+
+        inputStream?.use { input ->
+            outputStream.use { output ->
+                input.copyTo(output)
+            }
+        }
+        file.absolutePath // Ini path internal permanen yang gak bakal kedaluwarsa!
+    } catch (e: Exception) {
+        e.printStackTrace()
+        ""
+    }
+}
+
 @Composable
-fun DashboardScreen(viewModel: FinanceViewModel) {
+fun DashboardScreen(
+    viewModel: FinanceViewModel,
+    onNavigateToAiQuick: () -> Unit,
+    onTriggerAddTransaction: () -> Unit
+) {
     val wallets by viewModel.wallets.collectAsState()
     val activities by viewModel.activities.collectAsState()
     val kategoris by viewModel.kategoris.collectAsState()
     val userName by viewModel.userName.collectAsState()
+
+    // 🔥 SEKARANG AMBIL LANGSUNG DARI VIEWMODEL (UDAH DI-LOCK SHARDPREFERENCES)
+    val userProfileUri by viewModel.userProfileUri.collectAsState()
 
     var showProfileDialog by remember { mutableStateOf(false) }
     val totalBalance = remember(wallets) { wallets.sumOf { it.balance } }
@@ -207,11 +272,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     val isDark = isSystemInDarkTheme()
     val primaryGradient = remember(isDark) {
         Brush.verticalGradient(
-            colors = if (isDark) {
-                listOf(Color(0xFF10B981), Color(0xFF065F46))
-            } else {
-                listOf(Color(0xFF10B981), Color(0xFFD1FAE5))
-            }
+            colors = if (isDark) listOf(Color(0xFF10B981), Color(0xFF065F46)) else listOf(Color(0xFF10B981), Color(0xFFD1FAE5))
         )
     }
 
@@ -220,31 +281,28 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(28.dp)
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Top Header dengan Logo Bulat Sempurna
+        // Top Header dengan resolusi layout responsive
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                Text("Hello,", fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Medium)
                 Text(
-                    "Hello,",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.secondary,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    "$userName ✨",
-                    fontSize = 28.sp,
+                    text = "$userName ✨",
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground,
-                    letterSpacing = (-0.5).sp
+                    letterSpacing = (-0.5).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // MODIFIKASI: Menggunakan kliping CircleShape penuh agar logo membulat mutlak
+            // Avatar Bulat Permanen
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -254,29 +312,64 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     .clickable { showProfileDialog = true },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = userName.take(2).uppercase(),
-                    fontWeight = FontWeight.Black,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                if (userProfileUri.isNotEmpty()) {
+                    AsyncImage(
+                        model = Uri.parse(userProfileUri),
+                        contentDescription = "Foto Profil",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = userName.take(2).uppercase(),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+
+        // Barisan Tombol Shortcut (Warna teks Catat Kilat AI udah putih murni ❄️)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = onNavigateToAiQuick,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6366F1),
+                    contentColor = Color.White // Fix teks putih!
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+            ) {
+                Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Catat Kilat AI", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+            }
+
+            OutlinedButton(
+                onClick = onTriggerAddTransaction,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Transaksi Baru", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
 
         // Main Balance Card
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp),
+            modifier = Modifier.fillMaxWidth().height(200.dp),
             shape = RoundedCornerShape(32.dp),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(primaryGradient)
-                    .padding(24.dp)
-            ) {
+            Box(modifier = Modifier.fillMaxSize().background(primaryGradient).padding(24.dp)) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawCircle(
                         color = Color.White.copy(alpha = 0.05f),
@@ -287,28 +380,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
 
                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                     Column {
-                        Text(
-                            "TOTAL BALANCE",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.5.sp
-                        )
-                        Text(
-                            formatRp(totalBalance),
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White,
-                            style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f))
-                        )
+                        Text("TOTAL BALANCE", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                        Text(formatRp(totalBalance), fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color.White, style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f)))
                     }
 
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -317,24 +394,10 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             Text(formatRp(totalIncome).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFF4ADE80), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
                             Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
-                            Text(
-                                if (netMonthly >= 0) "Sisa" else "Minus",
-                                fontSize = 8.sp,
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                formatRp(netMonthly).replace("Rp ", ""),
-                                fontSize = 10.sp,
-                                color = if (netMonthly >= 0) Color(0xFF4ADE80) else Color(0xFFF87171),
-                                fontWeight = FontWeight.Black,
-                                maxLines = 1
-                            )
+                            Text(if (netMonthly >= 0) "Sisa" else "Minus", fontSize = 8.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                            Text(formatRp(netMonthly).replace("Rp ", ""), fontSize = 10.sp, color = if (netMonthly >= 0) Color(0xFF4ADE80) else Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1)
                             Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
                         }
 
@@ -350,41 +413,20 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         // Budget Watch
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("Budget Watch", Icons.Rounded.Analytics)
-
             budgetKategoris.take(3).forEach { cat ->
                 val ratio = remember(cat.spent, cat.budget) { (cat.spent / cat.budget).toFloat().coerceIn(0f, 1f) }
                 val color = if (ratio > 0.9f) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                ) {
+                Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(cat.emoji, fontSize = 24.sp)
                                 Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
-                            Text(
-                                "${(ratio * 100).toInt()}%",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp,
-                                color = color
-                            )
+                            Text("${(ratio * 100).toInt()}%", fontWeight = FontWeight.Black, fontSize = 12.sp, color = color)
                         }
                         Spacer(Modifier.height(12.dp))
-                        LinearProgressIndicator(
-                            progress = { ratio },
-                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
-                            color = color,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
+                        LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = color, trackColor = MaterialTheme.colorScheme.surfaceVariant)
                     }
                 }
             }
@@ -393,18 +435,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         // Recent Wallets
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("My Assets", Icons.Rounded.AccountBalanceWallet)
-
-            wallets.forEach { wallet ->
-                WalletListCard(wallet)
-            }
+            wallets.forEach { wallet -> WalletListCard(wallet) }
         }
     }
 
     if (showProfileDialog) {
-        UserProfileDialog(
-            viewModel = viewModel,
-            onDismiss = { showProfileDialog = false }
-        )
+        UserProfileDialog(viewModel = viewModel, onDismiss = { showProfileDialog = false })
     }
 }
 
@@ -416,16 +452,33 @@ fun UserProfileDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
     val apiKey by viewModel.userApiKey.collectAsState()
     val userName by viewModel.userName.collectAsState()
+    val userProfileUri by viewModel.userProfileUri.collectAsState()
 
     var textInputName by remember { mutableStateOf(userName) }
     var textInputKey by remember { mutableStateOf(apiKey) }
+    var selectedPhotoUriStr by remember { mutableStateOf(userProfileUri) }
+
+    // 🔴 CARI BAGIAN INI DI USERPROFILEDIALOG LALU UPDATE:
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            // 💡 PROSES COPY: Salin file asli galeri ke internal storage aplikasi
+            val permanentPath = saveImageToInternalStorage(context, it)
+            if (permanentPath.isNotEmpty()) {
+                selectedPhotoUriStr = permanentPath // Ambil path permanennya!
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Button(
                 onClick = {
-                    viewModel.saveUserProfile(context, textInputName.trim(), textInputKey.trim())
+                    // 🔥 SEKARANG DATA URI FOTO DIKIRIM SEKALIAN BUAT DISIMPAN PERMANEN
+                    viewModel.saveUserProfile(context, textInputName.trim(), textInputKey.trim(), selectedPhotoUriStr)
                     android.widget.Toast.makeText(context, "Profil Berhasil Diperbarui! 🚀", android.widget.Toast.LENGTH_SHORT).show()
                     onDismiss()
                 },
@@ -443,13 +496,29 @@ fun UserProfileDialog(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 Box(
-                    modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                        .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        .clickable { photoPickerLauncher.launch("image/*") },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.ManageAccounts, null, tint = MaterialTheme.colorScheme.primary)
+                    if (selectedPhotoUriStr.isNotEmpty()) {
+                        AsyncImage(
+                            model = Uri.parse(selectedPhotoUriStr),
+                            contentDescription = "Preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(Icons.Rounded.AddAPhoto, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
-                Text("Pengaturan Developer 🛠️", fontSize = 20.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(8.dp))
+                Text("Ketuk Lingkaran untuk Ubah Foto 📸", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("Pengaturan Profil", fontSize = 20.sp, fontWeight = FontWeight.Black)
             }
         },
         text = {
@@ -473,13 +542,6 @@ fun UserProfileDialog(
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     leadingIcon = { Icon(Icons.Rounded.VpnKey, contentDescription = "", tint = MaterialTheme.colorScheme.primary) }
-                )
-
-                Text(
-                    text = "Gunakan kunci mandiri dari Google AI Studio agar kuota pemrosesan AI terpisah secara personal dan bebas dari antrean limit.",
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
         },
@@ -1234,8 +1296,11 @@ fun AddTransactionDialog(
 }
 
 @Composable
-fun AiScreen(viewModel: FinanceViewModel) {
-    var aiMode by remember { mutableStateOf(AiMode.CHAT) }
+fun AiScreen(
+    viewModel: FinanceViewModel,
+    currentMode: AiMode,
+    onModeChanged: (AiMode) -> Unit
+) {
     var userPrompt by remember { mutableStateOf("") }
     val aiResponse by viewModel.aiResponse.collectAsState()
     val aiLoading by viewModel.aiLoading.collectAsState()
@@ -1291,13 +1356,13 @@ fun AiScreen(viewModel: FinanceViewModel) {
                 ) {
                     Row(modifier = Modifier.padding(4.dp)) {
                         AiMode.entries.forEach { mode ->
-                            val isSelected = aiMode == mode
+                            val isSelected = currentMode == mode
                             Box(
                                 modifier = Modifier
                                     .clip(CircleShape)
                                     .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
                                     .clickable {
-                                        aiMode = mode
+                                        onModeChanged(mode)
                                         viewModel.clearAiResponse()
                                     }
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -1314,7 +1379,7 @@ fun AiScreen(viewModel: FinanceViewModel) {
                 }
             }
 
-            if (aiMode == AiMode.CHAT) {
+            if (currentMode == AiMode.CHAT) {
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1423,13 +1488,13 @@ fun AiScreen(viewModel: FinanceViewModel) {
                             verticalArrangement = Arrangement.spacedBy(20.dp)
                         ) {
                             Icon(
-                                if (aiMode == AiMode.CHAT) Icons.Rounded.AutoAwesome else Icons.Rounded.FlashOn,
+                                if (currentMode == AiMode.CHAT) Icons.Rounded.AutoAwesome else Icons.Rounded.FlashOn,
                                 "",
                                 tint = MaterialTheme.colorScheme.outlineVariant,
                                 modifier = Modifier.size(80.dp)
                             )
                             Text(
-                                if (aiMode == AiMode.CHAT)
+                                if (currentMode == AiMode.CHAT)
                                     "Tanyakan apa saja tentang keuanganmu.\nSaya akan bantu menganalisis!"
                                 else
                                     "Catat banyak transaksi sekaligus\nhanya dengan satu kalimat.",
@@ -1461,7 +1526,7 @@ fun AiScreen(viewModel: FinanceViewModel) {
                         onValueChange = { userPrompt = it },
                         placeholder = {
                             Text(
-                                if (aiMode == AiMode.CHAT) "Tanya AI..." else "Catat cepat...",
+                                if (currentMode == AiMode.CHAT) "Tanya AI..." else "Catat cepat...",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
                         },
@@ -1480,14 +1545,14 @@ fun AiScreen(viewModel: FinanceViewModel) {
                             .size(48.dp)
                             .clip(CircleShape)
                             .clickable(enabled = userPrompt.isNotEmpty() && !aiLoading) {
-                                viewModel.onAiAction(userPrompt, aiMode == AiMode.CHAT)
+                                viewModel.onAiAction(userPrompt, currentMode == AiMode.CHAT)
                                 userPrompt = ""
                             },
                         color = if (userPrompt.isNotEmpty()) Color(0xFF6366F1) else MaterialTheme.colorScheme.surfaceVariant
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                if (aiMode == AiMode.CHAT) Icons.Rounded.Send else Icons.Rounded.AutoFixHigh,
+                                if (currentMode == AiMode.CHAT) Icons.Rounded.Send else Icons.Rounded.AutoFixHigh,
                                 "",
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)

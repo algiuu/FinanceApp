@@ -20,9 +20,13 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     private val _userApiKey = MutableStateFlow("")
     val userApiKey: StateFlow<String> = _userApiKey
 
-    // AMAN! Nama default sekarang diganti jadi "User" agar lebih universal 👤
+    // StateFlow baru untuk nama user secara dinamis
     private val _userName = MutableStateFlow("User")
     val userName: StateFlow<String> = _userName
+
+    // 🔥 TAMBAHKAN INI: StateFlow untuk menampung string URI Foto Profil user secara permanen
+    private val _userProfileUri = MutableStateFlow("")
+    val userProfileUri: StateFlow<String> = _userProfileUri
 
     private val chatHistory = mutableListOf<Pair<String, String>>()
 
@@ -45,23 +49,25 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     fun loadApiKey(context: Context) {
         val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
         _userApiKey.value = sharedPref.getString("gemini_api_key", "") ?: ""
-        // Di sini juga diganti default-nya jadi "User" kalau data SharedPreferences masih kosong
         _userName.value = sharedPref.getString("user_profile_name", "User") ?: "User"
+        _userProfileUri.value = sharedPref.getString("user_profile_uri", "") ?: "" // Ambil foto permanen
     }
 
-    fun saveUserProfile(context: Context, newName: String, newKey: String) {
+
+    fun saveUserProfile(context: Context, newName: String, newKey: String, newUri: String) {
         val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
         sharedPref.edit().apply {
             putString("user_profile_name", newName.ifBlank { "User" })
             putString("gemini_api_key", newKey.trim())
+            putString("user_profile_uri", newUri) // Kunci path foto di sini!
         }.apply()
 
         _userName.value = newName.ifBlank { "User" }
         _userApiKey.value = newKey.trim()
+        _userProfileUri.value = newUri // Update state realtime ke UI Compose
     }
 
     fun onAiAction(userInput: String, isChatMode: Boolean) {
-        // Cek dulu apakah API Key sudah diisi oleh user atau belum
         val currentKey = _userApiKey.value
         if (currentKey.isBlank()) {
             _aiResponse.value = "🔑 **API Key Gemini Belum Diatur!**\n\nSilakan ketuk logo **Profil** di pojok kanan atas beranda, lalu masukkan API Key Gemini Flash 2.5 milikmu sendiri agar fitur AI bisa digunakan."
@@ -124,12 +130,10 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                 val kategorisContext = currentKategoris.joinToString { "ID: ${it.id} - Nama: ${it.name}" }
 
                 val jsonResultRaw = geminiService.parseNaturalLanguageTransaction(apiKey, userInput, walletsContext, kategorisContext)
-                android.util.Log.d("FinanceViewModel", "Raw JSON from AI: $jsonResultRaw")
 
                 val container = try {
                     Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(jsonResultRaw)
                 } catch (e: Exception) {
-                    android.util.Log.e("FinanceViewModel", "JSON Parsing Error", e)
                     val cleanedJson = jsonResultRaw.replace("```json", "").replace("```", "").trim()
                     Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(cleanedJson)
                 }
@@ -178,7 +182,6 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                 else "🤖 AI tidak menemukan transaksi valid atau saldo tidak cukup.\n\n$summaryReport"
 
             } catch (e: Exception) {
-                android.util.Log.e("FinanceViewModel", "Error in AI processing", e)
                 _aiResponse.value = "❌ Terjadi kesalahan: ${e.localizedMessage ?: "Gagal memproses AI"}"
             } finally {
                 _aiLoading.value = false
