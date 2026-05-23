@@ -15,6 +15,8 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     private val _aiLoading = MutableStateFlow(false)
     val aiLoading: StateFlow<Boolean> = _aiLoading
 
+    private val chatHistory = mutableListOf<Pair<String, String>>()
+
     val wallets: StateFlow<List<Wallet>> = dao.getAllWalletsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -40,7 +42,6 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     private fun consultViaAI(userInput: String) {
         viewModelScope.launch {
             _aiLoading.value = true
-            _aiResponse.value = ""
             try {
                 val context = buildString {
                     append("Saldo Dompet:\n")
@@ -48,7 +49,19 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
                     append("\nTarget Menabung:\n")
                     savingGoals.value.forEach { append("- ${it.title}: ${it.saved}/${it.target}\n") }
                 }
-                val response = geminiService.consultFinancialAi(userInput, context)
+                
+                // Kirim riwayat yang sudah ada + pesan baru
+                val response = geminiService.consultFinancialAi(userInput, chatHistory, context)
+                
+                // Update riwayat lokal
+                chatHistory.add("USER" to userInput)
+                chatHistory.add("FINANZAI" to response)
+                
+                // Batasi riwayat (misal 10 pasang pesan terakhir)
+                if (chatHistory.size > 20) {
+                    repeat(2) { chatHistory.removeAt(0) }
+                }
+
                 _aiResponse.value = response
             } catch (e: Exception) {
                 _aiResponse.value = "❌ Gagal konsultasi: ${e.localizedMessage}"
@@ -249,5 +262,6 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     
     fun clearAiResponse() {
         _aiResponse.value = ""
+        chatHistory.clear()
     }
 }

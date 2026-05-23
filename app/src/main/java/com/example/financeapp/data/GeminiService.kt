@@ -20,28 +20,29 @@ class GeminiService(apiKey: String) {
         apiKey = apiKey
     )
 
-    suspend fun consultFinancialAi(userInput: String, context: String): String {
+    suspend fun consultFinancialAi(userInput: String, history: List<Pair<String, String>>, context: String): String {
         val systemInstructions = """
             Anda adalah asisten keuangan pribadi bernama FinanzAI. 
-            Gunakan data keuangan berikut sebagai konteks untuk memberikan saran yang relevan:
+            Gunakan data keuangan berikut sebagai konteks awal untuk memberikan saran yang relevan:
             $context
             
             Berikan jawaban yang ramah, profesional, dan membantu dalam bahasa Indonesia.
             Gunakan format markdown yang rapi (bold, bullet points, emoji) agar mudah dibaca.
+            
+            BERIKUT ADALAH RIWAYAT PERCAKAPAN KITA:
+            ${history.joinToString("\n") { "${it.first}: ${it.second}" }}
+            USER: $userInput
+            FINANZAI:
         """.trimIndent()
 
         var retries = 3
         var delayMillis = 1500L
         while (retries > 0) {
             try {
-                val response = generativeModelChat.generateContent(
-                    content {
-                        text(systemInstructions)
-                        text(userInput)
-                    }
-                )
+                val response = generativeModelChat.generateContent(systemInstructions)
                 return response.text ?: "Maaf, saya tidak bisa memberikan jawaban saat ini."
             } catch (e: Exception) {
+                android.util.Log.e("GeminiService", "Error in consultFinancialAi", e)
                 retries--
                 if (retries == 0) throw e
                 delay(delayMillis)
