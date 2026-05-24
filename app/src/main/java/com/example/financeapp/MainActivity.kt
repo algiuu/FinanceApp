@@ -381,7 +381,7 @@ fun DashboardScreen(
                     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                         Column {
                             Text("TOTAL BALANCE", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                            Text(formatRp(totalBalance), fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color.White, style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f)))
+                            Text(formatRp(totalBalance), fontSize = 25.sp, fontWeight = FontWeight.Black, color = Color.White, style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f)))
                         }
 
                         Row(
