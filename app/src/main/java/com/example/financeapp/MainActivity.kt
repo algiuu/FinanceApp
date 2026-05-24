@@ -247,27 +247,19 @@ fun DashboardScreen(
     onTriggerAddTransaction: () -> Unit
 ) {
     val wallets by viewModel.wallets.collectAsState()
-    val activities by viewModel.activities.collectAsState()
     val kategoris by viewModel.kategoris.collectAsState()
     val userName by viewModel.userName.collectAsState()
-
-    // 🔥 SEKARANG AMBIL LANGSUNG DARI VIEWMODEL (UDAH DI-LOCK SHARDPREFERENCES)
     val userProfileUri by viewModel.userProfileUri.collectAsState()
 
-    var showProfileDialog by remember { mutableStateOf(false) }
-    val totalBalance = remember(wallets) { wallets.sumOf { it.balance } }
 
-    val currentMonthActivities = remember(activities) {
-        val now = LocalDate.now()
-        val yearMonth = String.format("%04d-%02d", now.year, now.monthValue)
-        activities.filter { it.date.startsWith(yearMonth) }
-    }
+    val totalBalance by viewModel.totalBalance.collectAsState()
+    val totalIncome by viewModel.totalIncome.collectAsState()
+    val totalExpense by viewModel.totalExpense.collectAsState()
+    val netMonthly by viewModel.netMonthly.collectAsState()
 
-    val totalIncome = remember(currentMonthActivities) { currentMonthActivities.filter { it.type == "income" }.sumOf { it.amount } }
-    val totalExpense = remember(currentMonthActivities) { currentMonthActivities.filter { it.type == "expense" }.sumOf { it.amount } }
-    val netMonthly = totalIncome - totalExpense
 
     val budgetKategoris = remember(kategoris) { kategoris.filter { it.budget > 0 } }
+    var showProfileDialog by remember { mutableStateOf(false) }
 
     val isDark = isSystemInDarkTheme()
     val primaryGradient = remember(isDark) {
@@ -283,7 +275,7 @@ fun DashboardScreen(
             .padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Top Header dengan resolusi layout responsive
+
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

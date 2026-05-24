@@ -24,7 +24,7 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     private val _userName = MutableStateFlow("User")
     val userName: StateFlow<String> = _userName
 
-    // 🔥 TAMBAHKAN INI: StateFlow untuk menampung string URI Foto Profil user secara permanen
+    // StateFlow untuk menampung string URI Foto Profil user secara permanen
     private val _userProfileUri = MutableStateFlow("")
     val userProfileUri: StateFlow<String> = _userProfileUri
 
@@ -42,29 +42,71 @@ class FinanceViewModel(private val dao: FinanceDao) : ViewModel() {
     val savingGoals: StateFlow<List<SavingGoal>> = dao.getAllSavingGoalsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+
+
+    // 1. StateFlow Total Saldo dari seluruh dompet
+    val totalBalance: StateFlow<Double> = wallets.map { list ->
+        list.sumOf { it.balance }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // 2. StateFlow khusus menyaring transaksi di bulan aktif saat ini
+    val currentMonthActivities: StateFlow<List<Activity>> = activities.map { list ->
+        val now = java.time.LocalDate.now()
+        val yearMonth = String.format("%04d-%02d", now.year, now.monthValue)
+        list.filter { it.date.startsWith(yearMonth) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 3. Surplus (Total Pemasukan Bulan Ini)
+    val totalIncome: StateFlow<Double> = currentMonthActivities.map { list ->
+        list.filter { it.type == "income" }.sumOf { it.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // 4. Defisit (Total Pengeluaran Bulan Ini)
+    // 💡 FIX: Bagian SharingStarted.WhileSubscribed(5000) udah normal krispi!
+    val totalExpense: StateFlow<Double> = currentMonthActivities.map { list ->
+        list.filter { it.type == "expense" }.sumOf { it.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // 5. Sisa Bersih Bulanan (Surplus dikurangi Defisit)
+    val netMonthly: StateFlow<Double> = combine(totalIncome, totalExpense) { income, expense ->
+        income - expense
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+
+
     // Inisialisasi service kosongan tanpa hardcode string key developer
     private val geminiService = GeminiService()
 
     // Fungsi manajemen Profil & API Key menggunakan SharedPreferences internal HP Android
-    fun loadApiKey(context: Context) {
-        val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
-        _userApiKey.value = sharedPref.getString("gemini_api_key", "") ?: ""
-        _userName.value = sharedPref.getString("user_profile_name", "User") ?: "User"
-        _userProfileUri.value = sharedPref.getString("user_profile_uri", "") ?: "" // Ambil foto permanen
-    }
 
+
+    fun loadApiKey(context: Context) {
+        // 💡 FIX: Dibungkus pakai viewModelScope.launch biar berjalan di background thread, gak nge-block UI utama!
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
+
+            val key = sharedPref.getString("gemini_api_key", "") ?: ""
+            val name = sharedPref.getString("user_profile_name", "User") ?: "User"
+            val uri = sharedPref.getString("user_profile_uri", "") ?: ""
+
+
+            _userApiKey.value = key
+            _userName.value = name
+            _userProfileUri.value = uri
+        }
+    }
 
     fun saveUserProfile(context: Context, newName: String, newKey: String, newUri: String) {
         val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
         sharedPref.edit().apply {
             putString("user_profile_name", newName.ifBlank { "User" })
             putString("gemini_api_key", newKey.trim())
-            putString("user_profile_uri", newUri) // Kunci path foto di sini!
+            putString("user_profile_uri", newUri)
         }.apply()
 
         _userName.value = newName.ifBlank { "User" }
         _userApiKey.value = newKey.trim()
-        _userProfileUri.value = newUri // Update state realtime ke UI Compose
+        _userProfileUri.value = newUri
     }
 
     fun onAiAction(userInput: String, isChatMode: Boolean) {
