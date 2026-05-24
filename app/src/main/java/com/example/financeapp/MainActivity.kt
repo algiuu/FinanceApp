@@ -61,7 +61,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.room.Room
 import coil.compose.AsyncImage
 import com.example.financeapp.data.*
 import com.example.financeapp.ui.FinanceViewModel
@@ -75,11 +74,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val db = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java, "finance-db"
-        ).fallbackToDestructiveMigration().build()
-        val dao = db.financeDao()
+        val dao = (application as FinanceApp).database.financeDao()
 
         enableEdgeToEdge()
         setContent {
@@ -88,12 +83,10 @@ class MainActivity : ComponentActivity() {
                     factory = object : ViewModelProvider.Factory {
                         @Suppress("UNCHECKED_CAST")
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                            return FinanceViewModel(dao) as T
+                            return FinanceViewModel(application, dao) as T
                         }
                     }
                 )
-
-                viewModel.loadApiKey(applicationContext)
 
                 MainAppScreen(viewModel)
             }
@@ -128,8 +121,7 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
 
     val wallets by viewModel.wallets.collectAsState()
     val kategoris by viewModel.kategoris.collectAsState()
-    // ⚡ FIX BUG: Tambahkan observasi activities biar Dashboard otomatis update pas ada transaksi baru!
-    val activities by viewModel.activities.collectAsState()
+
 
     Scaffold(
         bottomBar = {
@@ -224,7 +216,6 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
     }
 }
 
-// Fungsi sakti buat nge-copy foto dari galeri ke storage internal aplikasi secara permanen
 fun saveImageToInternalStorage(context: Context, uri: Uri): String {
     return try {
         val inputStream = context.contentResolver.openInputStream(uri)
@@ -236,14 +227,12 @@ fun saveImageToInternalStorage(context: Context, uri: Uri): String {
                 input.copyTo(output)
             }
         }
-        file.absolutePath // Ini path internal permanen yang gak bakal kedaluwarsa!
+        file.absolutePath
     } catch (e: Exception) {
         e.printStackTrace()
         ""
     }
 }
-
-
 
 @Composable
 fun DashboardScreen(
@@ -271,14 +260,11 @@ fun DashboardScreen(
         )
     }
 
-    // ⚡ OPTIMASI 1: Ubah ke LazyColumn biar komponen bawah dicache & dirender pas di-scroll aja!
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-
-        // Item 1: Header Profil
         item {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
@@ -326,7 +312,6 @@ fun DashboardScreen(
             }
         }
 
-        // Item 2: Tombol Shortcut Shortcut
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -411,12 +396,10 @@ fun DashboardScreen(
             }
         }
 
-        // Item 4: Budget Watch Section Header
         item {
             SectionHeader("Budget Watch", Icons.Rounded.Analytics)
         }
 
-        // ⚡ OPTIMASI 3: Unroll list budget langsung jadi item independen dalam LazyColumn
         items(
             items = budgetKategoris.take(3),
             key = { "budget_${it.id}" }
@@ -438,12 +421,10 @@ fun DashboardScreen(
             }
         }
 
-        // Item 5: My Assets Section Header
         item {
             SectionHeader("My Assets", Icons.Rounded.AccountBalanceWallet)
         }
 
-        // ⚡ OPTIMASI 4: List wallet juga dimasukkan ke items LazyColumn biar loadingnya enteng krispi
         items(
             items = wallets,
             key = { "wallet_home_${it.id}" }
@@ -471,16 +452,13 @@ fun UserProfileDialog(
     var textInputKey by remember { mutableStateOf(apiKey) }
     var selectedPhotoUriStr by remember { mutableStateOf(userProfileUri) }
 
-    // 🔴 CARI BAGIAN INI DI USERPROFILEDIALOG LALU UPDATE:
-
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            // 💡 PROSES COPY: Salin file asli galeri ke internal storage aplikasi
             val permanentPath = saveImageToInternalStorage(context, it)
             if (permanentPath.isNotEmpty()) {
-                selectedPhotoUriStr = permanentPath // Ambil path permanennya!
+                selectedPhotoUriStr = permanentPath
             }
         }
     }
@@ -490,7 +468,6 @@ fun UserProfileDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    // 🔥 SEKARANG DATA URI FOTO DIKIRIM SEKALIAN BUAT DISIMPAN PERMANEN
                     viewModel.saveUserProfile(context, textInputName.trim(), textInputKey.trim(), selectedPhotoUriStr)
                     android.widget.Toast.makeText(context, "Profil Berhasil Diperbarui! 🚀", android.widget.Toast.LENGTH_SHORT).show()
                     onDismiss()
@@ -599,6 +576,8 @@ fun SectionHeader(title: String, icon: ImageVector) {
 
 @Composable
 fun WalletListCard(wallet: Wallet) {
+    val color = remember(wallet.colorHex) { parseColorSafe(wallet.colorHex) } // ✅ cache!
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -614,10 +593,10 @@ fun WalletListCard(wallet: Wallet) {
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(parseColorSafe(wallet.colorHex).copy(alpha = 0.15f)),
+                    .background(color.copy(alpha = 0.15f)), // ✅ pakai variabel
                 contentAlignment = Alignment.Center
             ) {
-                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(parseColorSafe(wallet.colorHex)))
+                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(color)) // ✅
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(wallet.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -832,6 +811,8 @@ fun ModernTextField(
     icon: ImageVector,
     isAmount: Boolean = false
 ) {
+    val currencyTransformation = remember { CurrencyVisualTransformation() } // ✅ cache!
+
     OutlinedTextField(
         value = value,
         onValueChange = { newValue ->
@@ -855,7 +836,7 @@ fun ModernTextField(
         keyboardOptions = KeyboardOptions(
             keyboardType = if (isAmount) KeyboardType.Number else KeyboardType.Text
         ),
-        visualTransformation = if (isAmount) CurrencyVisualTransformation() else VisualTransformation.None
+        visualTransformation = if (isAmount) currencyTransformation else VisualTransformation.None // ✅
     )
 }
 
