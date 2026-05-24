@@ -126,4 +126,102 @@ class GeminiService {
         }
         throw Exception("Gagal memproses transaksi.")
     }
+
+    suspend fun auditMonthlySpending(
+        apiKey: String,
+        activitiesContext: String
+    ): String {
+        val prompt = """
+            Tugas: Lakukan "Audit Belanja Bulanan" (Subscription & Leak Detector).
+            Analisis data transaksi berikut dan cari pengeluaran berulang atau indikasi "kebocoran halus" (misal: terlalu banyak jajan, langganan yang menumpuk, dll).
+            
+            Data Transaksi:
+            $activitiesContext
+            
+            Berikan laporan singkat, tegas, namun membantu dalam bahasa Indonesia. 
+            Gunakan format markdown. Berikan saran konkret untuk menghemat uang bulan depan.
+        """.trimIndent()
+        return getModelChat(apiKey).generateContent(prompt).text ?: "Gagal melakukan audit."
+    }
+
+    suspend fun generateSavingChallenge(
+        apiKey: String,
+        activitiesContext: String
+    ): String {
+        val prompt = """
+            Tugas: Buat "Tantangan Hemat Kustom" (Gamified Budgeting).
+            Lihat pola pengeluaran user di bawah ini dan buat 1 tantangan spesifik untuk bulan depan agar user bisa hemat.
+            
+            Data Transaksi:
+            $activitiesContext
+            
+            Format laporan:
+            1. Analisis singkat pola pengeluaran terbesar.
+            2. Judul Tantangan (Contoh: "Puasa Kopi Kekinian").
+            3. Target Penghematan (Estimasi angka).
+            4. Pesan penyemangat.
+            
+            Gunakan bahasa Indonesia yang santai tapi persuasif.
+        """.trimIndent()
+        return getModelChat(apiKey).generateContent(prompt).text ?: "Gagal membuat tantangan."
+    }
+
+    suspend fun checkPurchaseEligibility(
+        apiKey: String,
+        itemName: String,
+        itemPrice: Double,
+        balanceContext: String
+    ): String {
+        val prompt = """
+            Tugas: Uji Kelayakan Beli (Simulasi Sebelum Belanja).
+            User ingin membeli: $itemName seharga Rp $itemPrice.
+            Kondisi keuangan user saat ini: $balanceContext
+            
+            Analisis apakah pembelian ini logis atau berisiko. Berikan rekomendasi:
+            - "GAS" (Jika sangat aman)
+            - "PIKIR DULU" (Jika agak mepet)
+            - "JANGAN DULU" (Jika berisiko)
+            
+            Berikan alasan logis (misal: persentase saldo yang terpakai) dan saran (misal: menabung berapa lama lagi).
+            Gunakan bahasa Indonesia.
+        """.trimIndent()
+        return getModelChat(apiKey).generateContent(prompt).text ?: "Gagal menganalisis kelayakan."
+    }
+
+    suspend fun generateWeeklyDigest(
+        apiKey: String,
+        digestContext: String
+    ): String {
+        val prompt = """
+            Kamu adalah penasihat keuangan pribadi FinanzAI. Analisis ringkasan pengeluaran pengguna minggu ini:
+            $digestContext
+            
+            Berikan respons dalam format JSON (dan HANYA JSON) dengan struktur berikut:
+            {
+              "notification_title": "Judul singkat (maks 5 kata)",
+              "notification_body": "Pesan singkat, santai, dan solutif (maks 15 kata)",
+              "deep_analysis": "Analisis mendalam, gunakan markdown bullet points jika perlu (maks 3 paragraf)"
+            }
+        """.trimIndent()
+        return getModelJson(apiKey).generateContent(prompt).text ?: ""
+    }
+
+    suspend fun predictEndOfMonth(
+        apiKey: String,
+        predictionContext: String
+    ): String {
+        val prompt = """
+            Tugas: Prediksi Sisa Saldo Akhir Bulan (End-of-Month Runway Predictor).
+            Gunakan data statistik berikut:
+            $predictionContext
+            
+            Analisis sisa hari menuju akhir bulan dan kecepatan belanja user (burn rate).
+            Berdasarkan data tersebut, berikan estimasi angka saldo akhir bulan yang tersisa.
+            Sebutkan apakah saldo tersebut aman atau kritis.
+            
+            Berikan jawaban yang singkat (maks 3-4 kalimat), to-the-point, dan berikan saran penghematan per hari jika diperlukan.
+            Gunakan bahasa Indonesia yang akrab tapi profesional.
+        """.trimIndent()
+        return getModelChat(apiKey).generateContent(prompt).text ?: "Gagal memprediksi."
+    }
 }

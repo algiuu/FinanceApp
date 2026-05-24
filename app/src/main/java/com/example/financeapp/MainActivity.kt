@@ -36,7 +36,9 @@ import androidx.compose.runtime.*
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -94,9 +96,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private val currencyFormatter = NumberFormat.getCurrencyInstance(Locale("id", "ID"))
+
 fun formatRp(amount: Double): String {
-    val format = NumberFormat.getCurrencyInstance(Locale("id", "ID"))
-    return format.format(amount).replace("Rp", "Rp ")
+    return currencyFormatter.format(amount).replace("Rp", "Rp ")
 }
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
@@ -119,70 +122,84 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
     var initialAiMode by remember { mutableStateOf(AiMode.AUTO_RECORD) }
     var showManualTransactionDialogFromHome by remember { mutableStateOf(false) }
 
-    val wallets by viewModel.wallets.collectAsState()
-    val kategoris by viewModel.kategoris.collectAsState()
-
-
     Scaffold(
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
-                modifier = Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            ) {
-                val screens = remember { listOf(Screen.Dashboard, Screen.Wallets, Screen.Transactions, Screen.AI, Screen.Goals, Screen.Categories) }
-                screens.forEach { screen ->
-                    val isSelected = currentScreen == screen
+            Column {
+                Text(
+                    text = "Built with AI by M.Alghifari.S XI RPL 1",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(vertical = 4.dp),
+                    textAlign = TextAlign.Center,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    fontWeight = FontWeight.Bold
+                )
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                ) {
+                    val screens = remember { listOf(Screen.Dashboard, Screen.Wallets, Screen.Transactions, Screen.AI, Screen.Goals, Screen.Categories) }
+                    screens.forEach { screen ->
+                        val isSelected = currentScreen == screen
 
-                    val animatedIconSize by animateDpAsState(
-                        targetValue = if (isSelected) 28.dp else 22.dp,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessHigh
-                        ),
-                        label = "iconFlash"
-                    )
-
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                screen.icon,
-                                contentDescription = screen.title,
-                                modifier = Modifier.size(animatedIconSize)
-                            )
-                        },
-                        label = {
-                            Text(
-                                screen.title,
-                                fontSize = 9.sp,
-                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Visible,
-                                softWrap = false
-                            )
-                        },
-                        selected = isSelected,
-                        alwaysShowLabel = true,
-                        onClick = {
-                            if (screen == Screen.AI) {
-                                initialAiMode = AiMode.AUTO_RECORD
-                            }
-                            currentScreen = screen
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
-                            selectedTextColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                        val animatedIconSize by animateDpAsState(
+                            targetValue = if (isSelected) 28.dp else 22.dp,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessHigh
+                            ),
+                            label = "iconFlash"
                         )
-                    )
+
+                        NavigationBarItem(
+                            icon = {
+                                Icon(
+                                    screen.icon,
+                                    contentDescription = screen.title,
+                                    modifier = Modifier.size(animatedIconSize)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    screen.title,
+                                    fontSize = 9.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Visible,
+                                    softWrap = false
+                                )
+                            },
+                            selected = isSelected,
+                            alwaysShowLabel = true,
+                            onClick = {
+                                if (screen == Screen.AI) {
+                                    initialAiMode = AiMode.AUTO_RECORD
+                                }
+                                currentScreen = screen
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
+                                selectedTextColor = if (screen == Screen.AI) Color(0xFF818CF8) else MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
                 }
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Box(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             when (currentScreen) {
                 Screen.Dashboard -> DashboardScreen(
                     viewModel = viewModel,
@@ -202,6 +219,10 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
             }
 
             if (showManualTransactionDialogFromHome) {
+                // Collect states only when dialog is actually shown
+                val wallets by viewModel.wallets.collectAsState()
+                val kategoris by viewModel.kategoris.collectAsState()
+
                 AddTransactionDialog(
                     wallets = wallets,
                     categories = kategoris,
@@ -240,201 +261,355 @@ fun DashboardScreen(
     onNavigateToAiQuick: () -> Unit,
     onTriggerAddTransaction: () -> Unit
 ) {
-    val wallets by viewModel.wallets.collectAsState()
     val kategoris by viewModel.kategoris.collectAsState()
-    val userName by viewModel.userName.collectAsState()
-    val userProfileUri by viewModel.userProfileUri.collectAsState()
-
-    val totalBalance by viewModel.totalBalance.collectAsState()
-    val totalIncome by viewModel.totalIncome.collectAsState()
-    val totalExpense by viewModel.totalExpense.collectAsState()
-    val netMonthly by viewModel.netMonthly.collectAsState()
-
-    val budgetKategoris = remember(kategoris) { kategoris.filter { it.budget > 0 } }
+    val wallets by viewModel.wallets.collectAsState()
+    val budgetKategoris = remember(kategoris) { kategoris.filter { it.budget > 0 }.take(3) }
     var showProfileDialog by remember { mutableStateOf(false) }
-
-    val isDark = isSystemInDarkTheme()
-    val primaryGradient = remember(isDark) {
-        Brush.verticalGradient(
-            colors = if (isDark) listOf(Color(0xFF10B981), Color(0xFF065F46)) else listOf(Color(0xFF10B981), Color(0xFFD1FAE5))
-        )
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                    Text("Hello,", fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Medium)
-                    Text(
-                        text = "$userName ✨",
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        letterSpacing = (-0.5).sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+        item(contentType = "Header") {
+            DashboardHeader(viewModel, onProfileClick = { showProfileDialog = true })
+        }
 
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        .clickable { showProfileDialog = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (userProfileUri.isNotEmpty()) {
-                        AsyncImage(
-                            model = Uri.parse(userProfileUri),
-                            contentDescription = "Foto Profil",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Text(
-                            text = userName.take(2).uppercase(),
-                            fontWeight = FontWeight.Black,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
+        item(contentType = "QuickActions") {
+            QuickActions(onNavigateToAiQuick, onTriggerAddTransaction)
+        }
+
+        item(contentType = "BalanceCard") {
+            BalanceCardSection(viewModel)
+        }
+
+        item(contentType = "PredictionCard") {
+            EndOfMonthPredictionCard(viewModel)
+        }
+
+        if (budgetKategoris.isNotEmpty()) {
+            item(contentType = "SectionHeader") {
+                SectionHeader("Budget Watch", Icons.Rounded.Analytics)
+            }
+
+            items(
+                items = budgetKategoris,
+                key = { "budget_${it.id}" },
+                contentType = { "BudgetItem" }
+            ) { cat ->
+                BudgetItem(cat)
             }
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = onNavigateToAiQuick,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1), contentColor = Color.White),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
-                ) {
-                    Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Catat Kilat AI", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
-                }
-
-                OutlinedButton(
-                    onClick = onTriggerAddTransaction,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Transaksi Baru", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                }
+        if (wallets.isNotEmpty()) {
+            item(contentType = "SectionHeader") {
+                SectionHeader("My Assets", Icons.Rounded.AccountBalanceWallet)
             }
-        }
 
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .graphicsLayer {
-                        clip = true
-                        shape = RoundedCornerShape(32.dp)
-                    },
-                elevation = CardDefaults.cardElevation(0.dp)
-            ) {
-                Box(modifier = Modifier.fillMaxSize().background(primaryGradient).padding(24.dp)) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.05f),
-                            radius = size.width * 0.4f,
-                            center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.1f)
-                        )
-                    }
-
-                    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                        Column {
-                            Text("TOTAL BALANCE", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                            Text(formatRp(totalBalance), fontSize = 25.sp, fontWeight = FontWeight.Black, color = Color.White, style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f)))
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Surplus", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                                Text(formatRp(totalIncome).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFF4ADE80), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
-                                Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
-                                Text(if (netMonthly >= 0) "Sisa" else "Minus", fontSize = 8.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                                Text(formatRp(netMonthly).replace("Rp ", ""), fontSize = 10.sp, color = if (netMonthly >= 0) Color(0xFF4ADE80) else Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1)
-                                Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
-                            }
-
-                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                                Text("Defisit", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                                Text(formatRp(totalExpense).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
-                            }
-                        }
-                    }
-                }
+            items(
+                items = wallets,
+                key = { "wallet_home_${it.id}" },
+                contentType = { "WalletItem" }
+            ) { wallet ->
+                WalletListCard(wallet)
             }
-        }
-
-        item {
-            SectionHeader("Budget Watch", Icons.Rounded.Analytics)
-        }
-
-        items(
-            items = budgetKategoris.take(3),
-            key = { "budget_${it.id}" }
-        ) { cat ->
-            val ratio = remember(cat.spent, cat.budget) { (cat.spent / cat.budget).toFloat().coerceIn(0f, 1f) }
-            val color = if (ratio > 0.9f) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(cat.emoji, fontSize = 24.sp)
-                            Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                        Text("${(ratio * 100).toInt()}%", fontWeight = FontWeight.Black, fontSize = 12.sp, color = color)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = color, trackColor = MaterialTheme.colorScheme.surfaceVariant)
-                }
-            }
-        }
-
-        item {
-            SectionHeader("My Assets", Icons.Rounded.AccountBalanceWallet)
-        }
-
-        items(
-            items = wallets,
-            key = { "wallet_home_${it.id}" }
-        ) { wallet ->
-            WalletListCard(wallet)
         }
     }
 
     if (showProfileDialog) {
         UserProfileDialog(viewModel = viewModel, onDismiss = { showProfileDialog = false })
+    }
+}
+
+@Composable
+fun DashboardHeader(viewModel: FinanceViewModel, onProfileClick: () -> Unit) {
+    val userName by viewModel.userName.collectAsState()
+    val userProfileUri by viewModel.userProfileUri.collectAsState()
+    val profileUri = remember(userProfileUri) { if (userProfileUri.isNotEmpty()) Uri.parse(userProfileUri) else null }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text("Hello,", fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Medium)
+            Text(
+                text = "$userName ✨",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                letterSpacing = (-0.5).sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                .clickable { onProfileClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            if (profileUri != null) {
+                AsyncImage(
+                    model = profileUri,
+                    contentDescription = "Foto Profil",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Text(
+                    text = userName.take(2).uppercase(),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun QuickActions(onNavigateToAiQuick: () -> Unit, onTriggerAddTransaction: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Button(
+            onClick = onNavigateToAiQuick,
+            modifier = Modifier.weight(1f).height(48.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1), contentColor = Color.White),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+        ) {
+            Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Catat Kilat AI", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+        }
+
+        OutlinedButton(
+            onClick = onTriggerAddTransaction,
+            modifier = Modifier.weight(1f).height(48.dp),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Transaksi Baru", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+        }
+    }
+}
+
+@Composable
+fun BalanceCardSection(viewModel: FinanceViewModel) {
+    val stats by viewModel.dashboardUiState.collectAsState()
+
+    val balanceStr = remember(stats.totalBalance) { formatRp(stats.totalBalance) }
+    val incomeStr = remember(stats.totalIncome) { formatRp(stats.totalIncome).replace("Rp ", "") }
+    val expenseStr = remember(stats.totalExpense) { formatRp(stats.totalExpense).replace("Rp ", "") }
+    val netStr = remember(stats.netMonthly) { formatRp(stats.netMonthly).replace("Rp ", "") }
+
+    val isDark = isSystemInDarkTheme()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+    ) {
+        // Decorative blobs for glass effect - Adaptive
+        Canvas(modifier = Modifier.matchParentSize().blur(40.dp)) {
+            drawCircle(
+                color = if (isDark) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF10B981).copy(alpha = 0.15f),
+                radius = size.minDimension * 0.5f,
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.1f)
+            )
+            drawCircle(
+                color = if (isDark) Color(0xFF3B82F6).copy(alpha = 0.15f) else Color(0xFF60A5FA).copy(alpha = 0.1f),
+                radius = size.minDimension * 0.4f,
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.9f)
+            )
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(28.dp),
+            // Glassmorphism effect: light/dark adaptive
+            color = if (isDark) Color.White.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.7f),
+            border = BorderStroke(
+                1.dp,
+                if (isDark) Color.White.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.3f)
+            ),
+            shadowElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        "TOTAL BALANCE",
+                        style = TextStyle(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        balanceStr,
+                        style = TextStyle(
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Surplus", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontWeight = FontWeight.Medium)
+                        Text(incomeStr, fontSize = 12.sp, color = Color(0xFF10B981), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+
+                    Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)))
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
+                        Text(if (stats.netMonthly >= 0) "Sisa" else "Minus", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontWeight = FontWeight.Medium)
+                        Text(netStr, fontSize = 12.sp, color = if (stats.netMonthly >= 0) Color(0xFF10B981) else Color(0xFFEF4444), fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+
+                    Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)))
+
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Text("Defisit", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontWeight = FontWeight.Medium)
+                        Text(expenseStr, fontSize = 12.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetItem(cat: Kategori) {
+    val ratio = remember(cat.spent, cat.budget) { (cat.spent / cat.budget).toFloat().coerceIn(0f, 1f) }
+    val color = if (ratio > 0.9f) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Surface(
+                        shape = CircleShape,
+                        color = color.copy(alpha = 0.1f),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(cat.emoji, fontSize = 24.sp)
+                        }
+                    }
+                    Column {
+                        Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Budget: ${formatRp(cat.budget)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+                Text("${(ratio * 100).toInt()}%", fontWeight = FontWeight.Black, fontSize = 14.sp, color = color)
+            }
+            Spacer(Modifier.height(16.dp))
+            LinearProgressIndicator(
+                progress = { ratio },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                color = color,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun EndOfMonthPredictionCard(viewModel: FinanceViewModel) {
+    val prediction by viewModel.endOfMonthPrediction.collectAsState()
+    val aiLoading by viewModel.aiLoading.collectAsState()
+    val isApiKeySet = viewModel.userApiKey.collectAsState().value.isNotEmpty()
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f))
+    ) {
+        Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Text("AI Prediction", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.secondary)
+                }
+
+                if (isApiKeySet) {
+                    FilledTonalIconButton(
+                        onClick = { viewModel.triggerEndOfMonthPrediction() },
+                        modifier = Modifier.size(32.dp),
+                        enabled = !aiLoading,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f))
+                    ) {
+                        if (aiLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.secondary)
+                        } else {
+                            Icon(Icons.Rounded.Refresh, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
+            if (prediction.isNotEmpty()) {
+                Text(
+                    text = prediction,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            } else {
+                Text(
+                    text = "Ketuk ikon refresh untuk melihat proyeksi sisa saldo kamu di akhir bulan nanti. 📊",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    lineHeight = 20.sp
+                )
+            }
+        }
     }
 }
 
@@ -459,6 +634,43 @@ fun UserProfileDialog(
             val permanentPath = saveImageToInternalStorage(context, it)
             if (permanentPath.isNotEmpty()) {
                 selectedPhotoUriStr = permanentPath
+            }
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        uri?.let {
+            viewModel.exportData { json ->
+                if (json != null) {
+                    context.contentResolver.openOutputStream(it)?.use { output ->
+                        output.write(json.toByteArray())
+                    }
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(context, "Data Berhasil Diekspor! 📂", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            val json = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
+            if (json != null) {
+                viewModel.importData(json) { success ->
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (success) {
+                            android.widget.Toast.makeText(context, "Data Berhasil Diimpor! 📥", android.widget.Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        } else {
+                            android.widget.Toast.makeText(context, "Gagal Impor Data! ❌", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
             }
         }
     }
@@ -533,6 +745,34 @@ fun UserProfileDialog(
                     shape = RoundedCornerShape(14.dp),
                     leadingIcon = { Icon(Icons.Rounded.VpnKey, contentDescription = "", tint = MaterialTheme.colorScheme.primary) }
                 )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Text("Cadangan Data (Backup)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = { exportLauncher.launch("FinanceBackup_${System.currentTimeMillis()}.json") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Rounded.FileUpload, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Ekspor", fontSize = 12.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream")) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Rounded.FileDownload, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Impor", fontSize = 12.sp)
+                    }
+                }
             }
         },
         shape = RoundedCornerShape(28.dp),
@@ -1299,6 +1539,8 @@ fun AiScreen(
     val aiResponse by viewModel.aiResponse.collectAsState()
     val aiLoading by viewModel.aiLoading.collectAsState()
 
+    var showPurchaseCheckDialog by remember { mutableStateOf(false) }
+
     val aiGradient = Brush.linearGradient(
         colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7), Color(0xFFEC4899)),
         start = androidx.compose.ui.geometry.Offset(0f, 0f),
@@ -1373,7 +1615,19 @@ fun AiScreen(
                 }
             }
 
+            // --- SMART TOOLS SECTION ---
+
+
             if (currentMode == AiMode.CHAT) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SmartToolCard("Audit Keuangan", Icons.Rounded.Search, Color(0xFF10B981)) { viewModel.triggerAiAudit() }
+                    SmartToolCard("Tantangan Hemat", Icons.Rounded.Star, Color(0xFFF59E0B)) { viewModel.triggerAiChallenge() }
+                    SmartToolCard("Rapor Mingguan", Icons.Rounded.Analytics, Color(0xFF3B82F6)) { viewModel.triggerWeeklyDigest() }
+                    SmartToolCard("Beli Gak Ya?", Icons.Rounded.ShoppingBag, Color(0xFFEC4899)) { showPurchaseCheckDialog = true }
+                }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1557,6 +1811,70 @@ fun AiScreen(
             }
         }
     }
+
+    if (showPurchaseCheckDialog) {
+        PurchaseCheckDialog(
+            onDismiss = { showPurchaseCheckDialog = false },
+            onConfirm = { name, price ->
+                viewModel.triggerAiPurchaseCheck(name, price)
+                showPurchaseCheckDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun SmartToolCard(label: String, icon: ImageVector, color: Color, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = color.copy(alpha = 0.1f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = color)
+        }
+    }
+}
+
+@Composable
+fun PurchaseCheckDialog(onDismiss: () -> Unit, onConfirm: (String, Double) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    val p = price.toDoubleOrNull() ?: 0.0
+                    if (name.isNotBlank() && p > 0) onConfirm(name, p)
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text("Cek Kelayakan", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Batal")
+            }
+        },
+        title = { Text("Beli Gak Ya? 🤔", fontWeight = FontWeight.Black, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ModernTextField(value = name, onValueChange = { name = it }, label = "Nama Barang", icon = Icons.Rounded.Edit)
+                ModernTextField(value = price, onValueChange = { price = it }, label = "Harga", icon = Icons.Rounded.Payments, isAmount = true)
+            }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
 }
 
 @Composable

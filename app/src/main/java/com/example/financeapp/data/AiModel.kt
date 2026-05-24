@@ -18,3 +18,17 @@ data class AiParsedTransaction(
 data class AiParsedTransactionsContainer(
     val transactions: List<AiParsedTransaction>
 )
+
+@Serializable
+data class AiWeeklyDigest(
+    val notification_title: String,
+    val notification_body: String,
+    val deep_analysis: String
+)
+
+data class DashboardStats(
+    val totalBalance: Double = 0.0,
+    val totalIncome: Double = 0.0,
+    val totalExpense: Double = 0.0,
+    val netMonthly: Double = 0.0
+)

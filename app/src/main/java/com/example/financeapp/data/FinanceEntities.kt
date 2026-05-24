@@ -2,7 +2,9 @@ package com.example.financeapp.data
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "wallets")
 data class Wallet(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -11,6 +13,7 @@ data class Wallet(
     val colorHex: String = "#10B981"
 )
 
+@Serializable
 @Entity(tableName = "kategoris")
 data class Kategori(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -21,6 +24,7 @@ data class Kategori(
     val emoji: String = "🏷️"
 )
 
+@Serializable
 @Entity(
     tableName = "activities",
     foreignKeys = [
@@ -48,6 +52,7 @@ data class Activity(
     val date: String
 )
 
+@Serializable
 @Entity(tableName = "saving_goals")
 data class SavingGoal(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -56,6 +61,14 @@ data class SavingGoal(
     val saved: Double,
     val colorHex: String = "#6366F1",
     val targetDate: String = "" // Format: YYYY-MM-DD
+)
+
+@Serializable
+data class BackupData(
+    val wallets: List<Wallet>,
+    val categories: List<Kategori>,
+    val activities: List<Activity>,
+    val savingGoals: List<SavingGoal>
 )
 
 @Dao
@@ -128,6 +141,43 @@ interface FinanceDao {
     @Query("SELECT * FROM saving_goals")
     fun getAllSavingGoalsFlow(): Flow<List<SavingGoal>>
 
+    @Query("SELECT * FROM activities")
+    suspend fun getAllActivities(): List<Activity>
+
+    @Query("SELECT * FROM saving_goals")
+    suspend fun getAllSavingGoals(): List<SavingGoal>
+
+    @Transaction
+    suspend fun deleteAllData() {
+        clearActivities()
+        clearWallets()
+        clearKategoris()
+        clearSavingGoals()
+    }
+
+    @Query("DELETE FROM activities")
+    suspend fun clearActivities()
+
+    @Query("DELETE FROM wallets")
+    suspend fun clearWallets()
+
+    @Query("DELETE FROM kategoris")
+    suspend fun clearKategoris()
+
+    @Query("DELETE FROM saving_goals")
+    suspend fun clearSavingGoals()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWallets(wallets: List<Wallet>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKategoris(kategoris: List<Kategori>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertActivities(activities: List<Activity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSavingGoals(goals: List<SavingGoal>)
 }
 
 @Database(entities = [Wallet::class, Kategori::class, Activity::class, SavingGoal::class], version = 3)
