@@ -122,11 +122,17 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
     var initialAiMode by remember { mutableStateOf(AiMode.AUTO_RECORD) }
     var showManualTransactionDialogFromHome by remember { mutableStateOf(false) }
 
+    // Obfuscated Watermark Construction
+    val wm = remember {
+        val s = listOf("Built", "with", "AI", "by", "M.Alghifari.S", "XI", "RPL", "1")
+        s.joinToString(" ")
+    }
+
     Scaffold(
         bottomBar = {
             Column {
                 Text(
-                    text = "Built with AI by M.Alghifari.S XI RPL 1",
+                    text = wm,
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface)
