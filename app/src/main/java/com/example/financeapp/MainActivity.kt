@@ -177,7 +177,7 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
                             alwaysShowLabel = true,
                             onClick = {
                                 if (screen == Screen.AI) {
-                                    initialAiMode = AiMode.AUTO_RECORD
+                                    initialAiMode = AiMode.CHAT
                                 }
                                 currentScreen = screen
                             },
