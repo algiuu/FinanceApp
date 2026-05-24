@@ -1,6 +1,7 @@
 package com.example.financeapp
 
 import android.content.Context
+import androidx.compose.ui.graphics.graphicsLayer
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -127,6 +128,8 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
 
     val wallets by viewModel.wallets.collectAsState()
     val kategoris by viewModel.kategoris.collectAsState()
+    // ⚡ FIX BUG: Tambahkan observasi activities biar Dashboard otomatis update pas ada transaksi baru!
+    val activities by viewModel.activities.collectAsState()
 
     Scaffold(
         bottomBar = {
@@ -171,7 +174,7 @@ fun MainAppScreen(viewModel: FinanceViewModel) {
                         alwaysShowLabel = true,
                         onClick = {
                             if (screen == Screen.AI) {
-                                initialAiMode = AiMode.AUTO_RECORD // Reset paksa ke quick mode tiap pindah dari nav bar
+                                initialAiMode = AiMode.AUTO_RECORD
                             }
                             currentScreen = screen
                         },
@@ -240,6 +243,8 @@ fun saveImageToInternalStorage(context: Context, uri: Uri): String {
     }
 }
 
+
+
 @Composable
 fun DashboardScreen(
     viewModel: FinanceViewModel,
@@ -251,12 +256,10 @@ fun DashboardScreen(
     val userName by viewModel.userName.collectAsState()
     val userProfileUri by viewModel.userProfileUri.collectAsState()
 
-
     val totalBalance by viewModel.totalBalance.collectAsState()
     val totalIncome by viewModel.totalIncome.collectAsState()
     val totalExpense by viewModel.totalExpense.collectAsState()
     val netMonthly by viewModel.netMonthly.collectAsState()
-
 
     val budgetKategoris = remember(kategoris) { kategoris.filter { it.budget > 0 } }
     var showProfileDialog by remember { mutableStateOf(false) }
@@ -268,166 +271,184 @@ fun DashboardScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 20.dp),
+    // ⚡ OPTIMASI 1: Ubah ke LazyColumn biar komponen bawah dicache & dirender pas di-scroll aja!
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text("Hello,", fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Medium)
-                Text(
-                    text = "$userName ✨",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    letterSpacing = (-0.5).sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Avatar Bulat Permanen
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer)
-                    .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                    .clickable { showProfileDialog = true },
-                contentAlignment = Alignment.Center
+        // Item 1: Header Profil
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (userProfileUri.isNotEmpty()) {
-                    AsyncImage(
-                        model = Uri.parse(userProfileUri),
-                        contentDescription = "Foto Profil",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
+                Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("Hello,", fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Medium)
                     Text(
-                        text = userName.take(2).uppercase(),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-        }
-
-        // Barisan Tombol Shortcut (Warna teks Catat Kilat AI udah putih murni ❄️)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onNavigateToAiQuick,
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6366F1),
-                    contentColor = Color.White // Fix teks putih!
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
-            ) {
-                Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Catat Kilat AI", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
-            }
-
-            OutlinedButton(
-                onClick = onTriggerAddTransaction,
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Transaksi Baru", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-            }
-        }
-
-        // Main Balance Card
-        Card(
-            modifier = Modifier.fillMaxWidth().height(200.dp),
-            shape = RoundedCornerShape(32.dp),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Box(modifier = Modifier.fillMaxSize().background(primaryGradient).padding(24.dp)) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.05f),
-                        radius = size.width * 0.4f,
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.1f)
+                        text = "$userName ✨",
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        letterSpacing = (-0.5).sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                    Column {
-                        Text("TOTAL BALANCE", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                        Text(formatRp(totalBalance), fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color.White, style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f)))
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Surplus", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                            Text(formatRp(totalIncome).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFF4ADE80), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
-                            Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
-                            Text(if (netMonthly >= 0) "Sisa" else "Minus", fontSize = 8.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                            Text(formatRp(netMonthly).replace("Rp ", ""), fontSize = 10.sp, color = if (netMonthly >= 0) Color(0xFF4ADE80) else Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1)
-                            Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
-                        }
-
-                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                            Text("Defisit", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                            Text(formatRp(totalExpense).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
-                        }
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        .clickable { showProfileDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (userProfileUri.isNotEmpty()) {
+                        AsyncImage(
+                            model = Uri.parse(userProfileUri),
+                            contentDescription = "Foto Profil",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text(
+                            text = userName.take(2).uppercase(),
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
                 }
             }
         }
 
-        // Budget Watch
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            SectionHeader("Budget Watch", Icons.Rounded.Analytics)
-            budgetKategoris.take(3).forEach { cat ->
-                val ratio = remember(cat.spent, cat.budget) { (cat.spent / cat.budget).toFloat().coerceIn(0f, 1f) }
-                val color = if (ratio > 0.9f) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
-                Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(cat.emoji, fontSize = 24.sp)
-                                Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        // Item 2: Tombol Shortcut Shortcut
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = onNavigateToAiQuick,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1), contentColor = Color.White),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                ) {
+                    Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Catat Kilat AI", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+                }
+
+                OutlinedButton(
+                    onClick = onTriggerAddTransaction,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Transaksi Baru", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .graphicsLayer {
+                        clip = true
+                        shape = RoundedCornerShape(32.dp)
+                    },
+                elevation = CardDefaults.cardElevation(0.dp)
+            ) {
+                Box(modifier = Modifier.fillMaxSize().background(primaryGradient).padding(24.dp)) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.05f),
+                            radius = size.width * 0.4f,
+                            center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.1f)
+                        )
+                    }
+
+                    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("TOTAL BALANCE", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                            Text(formatRp(totalBalance), fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color.White, style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.2f), blurRadius = 8f)))
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Surplus", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                                Text(formatRp(totalIncome).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFF4ADE80), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            Text("${(ratio * 100).toInt()}%", fontWeight = FontWeight.Black, fontSize = 12.sp, color = color)
+
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
+                                Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
+                                Text(if (netMonthly >= 0) "Sisa" else "Minus", fontSize = 8.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                                Text(formatRp(netMonthly).replace("Rp ", ""), fontSize = 10.sp, color = if (netMonthly >= 0) Color(0xFF4ADE80) else Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1)
+                                Box(modifier = Modifier.width(1.dp).height(12.dp).background(Color.White.copy(alpha = 0.2f)))
+                            }
+
+                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                Text("Defisit", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                                Text(formatRp(totalExpense).replace("Rp ", ""), fontSize = 12.sp, color = Color(0xFFF87171), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                            }
                         }
-                        Spacer(Modifier.height(12.dp))
-                        LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = color, trackColor = MaterialTheme.colorScheme.surfaceVariant)
                     }
                 }
             }
         }
 
-        // Recent Wallets
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Item 4: Budget Watch Section Header
+        item {
+            SectionHeader("Budget Watch", Icons.Rounded.Analytics)
+        }
+
+        // ⚡ OPTIMASI 3: Unroll list budget langsung jadi item independen dalam LazyColumn
+        items(
+            items = budgetKategoris.take(3),
+            key = { "budget_${it.id}" }
+        ) { cat ->
+            val ratio = remember(cat.spent, cat.budget) { (cat.spent / cat.budget).toFloat().coerceIn(0f, 1f) }
+            val color = if (ratio > 0.9f) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
+            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(cat.emoji, fontSize = 24.sp)
+                            Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Text("${(ratio * 100).toInt()}%", fontWeight = FontWeight.Black, fontSize = 12.sp, color = color)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = color, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                }
+            }
+        }
+
+        // Item 5: My Assets Section Header
+        item {
             SectionHeader("My Assets", Icons.Rounded.AccountBalanceWallet)
-            wallets.forEach { wallet -> WalletListCard(wallet) }
+        }
+
+        // ⚡ OPTIMASI 4: List wallet juga dimasukkan ke items LazyColumn biar loadingnya enteng krispi
+        items(
+            items = wallets,
+            key = { "wallet_home_${it.id}" }
+        ) { wallet ->
+            WalletListCard(wallet)
         }
     }
 
