@@ -68,6 +68,13 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.google.generativeai)
 
+    // Ktor for OpenRouter/OpenAI 🌐
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.client.logging)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

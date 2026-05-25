@@ -64,11 +64,40 @@ data class SavingGoal(
 )
 
 @Serializable
+@Entity(tableName = "chat_sessions")
+data class ChatSession(
+    @PrimaryKey val id: String, // UUID
+    val title: String,
+    val lastTimestamp: Long = System.currentTimeMillis()
+)
+
+@Serializable
+@Entity(
+    tableName = "chat_messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = ChatSession::class,
+            parentColumns = ["id"],
+            childColumns = ["sessionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
+data class ChatMessage(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val sessionId: String,
+    val role: String, // "USER" or "FINANZAI"
+    val content: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Serializable
 data class BackupData(
     val wallets: List<Wallet>,
     val categories: List<Kategori>,
     val activities: List<Activity>,
-    val savingGoals: List<SavingGoal>
+    val savingGoals: List<SavingGoal>,
+    val chatHistory: List<ChatMessage> = emptyList()
 )
 
 @Dao
@@ -153,6 +182,7 @@ interface FinanceDao {
         clearWallets()
         clearKategoris()
         clearSavingGoals()
+        clearChatHistory()
     }
 
     @Query("DELETE FROM activities")
@@ -178,9 +208,33 @@ interface FinanceDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSavingGoals(goals: List<SavingGoal>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatMessages(messages: List<ChatMessage>)
+
+    @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC")
+    fun getAllChatMessagesFlow(): Flow<List<ChatMessage>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatMessage(message: ChatMessage)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatSession(session: ChatSession)
+
+    @Query("SELECT * FROM chat_sessions ORDER BY lastTimestamp DESC")
+    fun getAllChatSessionsFlow(): Flow<List<ChatSession>>
+
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY timestamp ASC")
+    fun getMessagesForSessionFlow(sessionId: String): Flow<List<ChatMessage>>
+
+    @Query("DELETE FROM chat_sessions WHERE id = :sessionId")
+    suspend fun deleteChatSession(sessionId: String)
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun clearChatHistory()
 }
 
-@Database(entities = [Wallet::class, Kategori::class, Activity::class, SavingGoal::class], version = 3)
+@Database(entities = [Wallet::class, Kategori::class, Activity::class, SavingGoal::class, ChatMessage::class, ChatSession::class], version = 5)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
 }

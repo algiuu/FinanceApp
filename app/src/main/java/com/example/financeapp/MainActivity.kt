@@ -628,10 +628,30 @@ fun UserProfileDialog(
     val apiKey by viewModel.userApiKey.collectAsState()
     val userName by viewModel.userName.collectAsState()
     val userProfileUri by viewModel.userProfileUri.collectAsState()
+    val aiProvider by viewModel.aiProvider.collectAsState()
+    val aiModel by viewModel.aiModel.collectAsState()
 
     var textInputName by remember { mutableStateOf(userName) }
     var textInputKey by remember { mutableStateOf(apiKey) }
     var selectedPhotoUriStr by remember { mutableStateOf(userProfileUri) }
+    var selectedProvider by remember { mutableStateOf(aiProvider) }
+    var selectedModel by remember { mutableStateOf(aiModel) }
+
+    // Auto-detect provider based on API Key prefix
+    LaunchedEffect(textInputKey) {
+        val trimmedKey = textInputKey.trim()
+        if (trimmedKey.startsWith("AIzaSy")) {
+            if (selectedProvider != "Gemini") {
+                selectedProvider = "Gemini"
+                selectedModel = "gemini-2.0-flash"
+            }
+        } else if (trimmedKey.startsWith("sk-or-")) {
+            if (selectedProvider != "OpenRouter") {
+                selectedProvider = "OpenRouter"
+                selectedModel = "google/gemini-2.0-flash-exp:free"
+            }
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -686,7 +706,7 @@ fun UserProfileDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    viewModel.saveUserProfile(context, textInputName.trim(), textInputKey.trim(), selectedPhotoUriStr)
+                    viewModel.saveUserProfile(context, textInputName.trim(), textInputKey.trim(), selectedPhotoUriStr, selectedProvider, selectedModel)
                     android.widget.Toast.makeText(context, "Profil Berhasil Diperbarui! 🚀", android.widget.Toast.LENGTH_SHORT).show()
                     onDismiss()
                 },
@@ -744,13 +764,87 @@ fun UserProfileDialog(
                 OutlinedTextField(
                     value = textInputKey,
                     onValueChange = { textInputKey = it },
-                    label = { Text("Gemini API Key") },
-                    placeholder = { Text("AIzaSy...") },
+                    label = { Text("API Key") },
+                    placeholder = { Text("AIzaSy... atau sk-or-...") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     leadingIcon = { Icon(Icons.Rounded.VpnKey, contentDescription = "", tint = MaterialTheme.colorScheme.primary) }
                 )
+
+                // Provider & Model Selection
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    var providerExpanded by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedCard(
+                            onClick = { providerExpanded = true },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("Provider", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(selectedProvider, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    Icon(Icons.Rounded.ArrowDropDown, null, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                        DropdownMenu(expanded = providerExpanded, onDismissRequest = { providerExpanded = false }) {
+                            listOf("Gemini", "OpenRouter").forEach { p ->
+                                DropdownMenuItem(
+                                    text = { Text(p) },
+                                    onClick = {
+                                        selectedProvider = p
+                                        if (p == "Gemini") selectedModel = "gemini-2.0-flash"
+                                        else selectedModel = "google/gemini-2.0-flash-exp:free"
+                                        providerExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    var modelExpanded by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.weight(1.5f)) {
+                        OutlinedTextField(
+                            value = selectedModel,
+                            onValueChange = { selectedModel = it },
+                            label = { Text("Model AI", fontSize = 10.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            textStyle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                            trailingIcon = {
+                                IconButton(onClick = { modelExpanded = true }) {
+                                    Icon(Icons.Rounded.ArrowDropDown, null)
+                                }
+                            }
+                        )
+                        DropdownMenu(expanded = modelExpanded, onDismissRequest = { modelExpanded = false }) {
+                            val models = if (selectedProvider == "Gemini") {
+                                listOf("gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash")
+                            } else {
+                                listOf(
+                                    "google/gemini-2.0-flash-exp:free",
+                                    "meta-llama/llama-3.3-70b-instruct:free",
+                                    "mistralai/mistral-7b-instruct:free",
+                                    "deepseek/deepseek-chat:free",
+                                    "anthropic/claude-3.5-sonnet",
+                                    "openai/gpt-4o-mini"
+                                )
+                            }
+                            models.forEach { m ->
+                                DropdownMenuItem(
+                                    text = { Text(m) },
+                                    onClick = {
+                                        selectedModel = m
+                                        modelExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
@@ -1247,23 +1341,36 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
                 }
             }
 
+            val groupedActivities = remember(filteredActivities) {
+                filteredActivities.groupBy { it.date }
+            }
+
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                items(
-                    items = filteredActivities,
-                    key = { it.id }
-                ) { act ->
-                    val cat = categoryMap[act.categoryId]
-                    val wal = walletMap[act.walletId]
-                    TransactionListCard(
-                        activity = act,
-                        category = cat,
-                        wallet = wal,
-                        onDelete = { viewModel.deleteActivity(act) },
-                        onEdit = { activityToEdit = act }
-                    )
+                groupedActivities.forEach { (date, acts) ->
+                    val dailyNet = acts.sumOf { if (it.type == "income") it.amount else -it.amount }
+
+                    item(key = "header_$date") {
+                        DailyHeader(date, dailyNet)
+                    }
+
+                    items(
+                        items = acts,
+                        key = { it.id }
+                    ) { act ->
+                        val cat = categoryMap[act.categoryId]
+                        val wal = walletMap[act.walletId]
+                        TransactionListCard(
+                            activity = act,
+                            category = cat,
+                            wallet = wal,
+                            onDelete = { viewModel.deleteActivity(act) },
+                            onEdit = { activityToEdit = act }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
         }
@@ -1314,6 +1421,47 @@ fun TransactionsScreen(viewModel: FinanceViewModel) {
                 state = dateRangeState,
                 title = { Text("Pilih Rentang Tanggal", modifier = Modifier.padding(16.dp)) },
                 modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+fun DailyHeader(dateStr: String, netAmount: Double) {
+    val date = remember(dateStr) { try { LocalDate.parse(dateStr) } catch (e: Exception) { null } }
+    val formattedDate = remember(date) {
+        val now = LocalDate.now()
+        when (date) {
+            now -> "Hari Ini"
+            now.minusDays(1) -> "Kemarin"
+            else -> date?.format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy", Locale("id", "ID"))) ?: dateStr
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = formattedDate.uppercase(),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
+
+        Surface(
+            color = if (netAmount >= 0) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            val absAmount = formatRp(kotlin.math.abs(netAmount)).replace("Rp ", "Rp")
+            Text(
+                text = (if (netAmount >= 0) "+" else "-") + absAmount,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (netAmount >= 0) Color(0xFF10B981) else Color(0xFFEF4444)
             )
         }
     }
@@ -1542,10 +1690,20 @@ fun AiScreen(
     onModeChanged: (AiMode) -> Unit
 ) {
     var userPrompt by remember { mutableStateOf("") }
+    val chatMessages by viewModel.chatMessages.collectAsState()
     val aiResponse by viewModel.aiResponse.collectAsState()
     val aiLoading by viewModel.aiLoading.collectAsState()
+    val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
     var showPurchaseCheckDialog by remember { mutableStateOf(false) }
+    var showChatHistoryDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(chatMessages.size) {
+        if (currentMode == AiMode.CHAT) {
+            scrollState.animateScrollTo(Int.MAX_VALUE)
+        }
+    }
 
     val aiGradient = Brush.linearGradient(
         colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7), Color(0xFFEC4899)),
@@ -1626,12 +1784,39 @@ fun AiScreen(
 
             if (currentMode == AiMode.CHAT) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Obrolan Baru", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = { showChatHistoryDialog = true },
+                            modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), CircleShape)
+                        ) {
+                            Icon(Icons.Rounded.History, "History", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(
+                            onClick = { viewModel.startNewChat() },
+                            modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.Rounded.DeleteSweep, "New Chat", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    SmartToolCard("Audit Keuangan", Icons.Rounded.Search, Color(0xFF10B981)) { viewModel.triggerAiAudit() }
-                    SmartToolCard("Tantangan Hemat", Icons.Rounded.Star, Color(0xFFF59E0B)) { viewModel.triggerAiChallenge() }
-                    SmartToolCard("Rapor Mingguan", Icons.Rounded.Analytics, Color(0xFF3B82F6)) { viewModel.triggerWeeklyDigest() }
+                    SmartToolCard("Audit Keuangan", Icons.Rounded.Search, Color(0xFF10B981)) { 
+                        userPrompt = "Tolong audit pengeluaran saya bulan ini dan cari kebocoran halus. 🔍" 
+                    }
+                    SmartToolCard("Tantangan Hemat", Icons.Rounded.Star, Color(0xFFF59E0B)) { 
+                        userPrompt = "Berikan saya tantangan hemat yang seru untuk minggu depan! 🎯" 
+                    }
+                    SmartToolCard("Rapor Mingguan", Icons.Rounded.Analytics, Color(0xFF3B82F6)) { 
+                        userPrompt = "Buatkan ringkasan dan rapor mingguan untuk kondisi keuangan saya. 📊" 
+                    }
                     SmartToolCard("Beli Gak Ya?", Icons.Rounded.ShoppingBag, Color(0xFFEC4899)) { showPurchaseCheckDialog = true }
                 }
                 Row(
@@ -1691,73 +1876,83 @@ fun AiScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             ) {
                 Box(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-                    if (aiLoading) {
+                    if (currentMode == AiMode.CHAT) {
                         Column(
-                            modifier = Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            CircularProgressIndicator(
-                                strokeWidth = 4.dp,
-                                color = Color(0xFF6366F1),
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Text(
-                                "Menganalisis data...",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else if (aiResponse.isNotEmpty()) {
-                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                            val cleanedResponse = aiResponse
-                                .replace(Regex("#+"), "")
-                                .replace(Regex("\\*\\*"), "")
-                                .replace(Regex("\\*"), "•")
-                                .trim()
+                            if (chatMessages.isEmpty()) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Rounded.AutoAwesome, "", tint = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.size(80.dp))
+                                    Text("Tanyakan apa saja tentang keuanganmu.\nSaya akan bantu menganalisis!", textAlign = TextAlign.Center, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
 
-                            cleanedResponse.split("\n\n").forEach { paragraph ->
-                                if (paragraph.isNotBlank()) {
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                                        shape = RoundedCornerShape(12.dp)
+                            chatMessages.forEach { msg ->
+                                val isUser = msg.role == "USER"
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+                                ) {
+                                    Surface(
+                                        color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(
+                                            topStart = 16.dp,
+                                            topEnd = 16.dp,
+                                            bottomStart = if (isUser) 16.dp else 4.dp,
+                                            bottomEnd = if (isUser) 4.dp else 16.dp
+                                        ),
+                                        modifier = Modifier.widthIn(max = 260.dp)
                                     ) {
                                         Text(
-                                            paragraph.trim(),
-                                            fontSize = 15.sp,
-                                            lineHeight = 24.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.padding(8.dp)
+                                            text = msg.content,
+                                            modifier = Modifier.padding(12.dp),
+                                            fontSize = 14.sp,
+                                            color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                 }
                             }
+                            
+                            if (aiLoading) {
+                                Box(modifier = Modifier.padding(8.dp)) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                }
+                            }
                         }
                     } else {
-                        Column(
-                            modifier = Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(20.dp)
-                        ) {
-                            Icon(
-                                if (currentMode == AiMode.CHAT) Icons.Rounded.AutoAwesome else Icons.Rounded.FlashOn,
-                                "",
-                                tint = MaterialTheme.colorScheme.outlineVariant,
-                                modifier = Modifier.size(80.dp)
-                            )
-                            Text(
-                                if (currentMode == AiMode.CHAT)
-                                    "Tanyakan apa saja tentang keuanganmu.\nSaya akan bantu menganalisis!"
-                                else
-                                    "Catat banyak transaksi sekaligus\nhanya dengan satu kalimat.",
-                                textAlign = TextAlign.Center,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 20.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                        // QUICK RECORD MODE ORIGINAL LOGIC
+                        if (aiLoading) {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                CircularProgressIndicator(strokeWidth = 4.dp, color = Color(0xFF6366F1), modifier = Modifier.size(48.dp))
+                                Text("Menganalisis data...", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else if (aiResponse.isNotEmpty()) {
+                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                val cleanedResponse = aiResponse.replace(Regex("#+"), "").replace(Regex("\\*\\*"), "").replace(Regex("\\*"), "•").trim()
+                                cleanedResponse.split("\n\n").forEach { paragraph ->
+                                    if (paragraph.isNotBlank()) {
+                                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(12.dp)) {
+                                            Text(paragraph.trim(), fontSize = 15.sp, lineHeight = 24.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(8.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                Icon(Icons.Rounded.FlashOn, "", tint = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.size(80.dp))
+                                Text("Catat banyak transaksi sekaligus\nhanya dengan satu kalimat.", textAlign = TextAlign.Center, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                            }
                         }
                     }
                 }
@@ -1827,6 +2022,60 @@ fun AiScreen(
             }
         )
     }
+
+    if (showChatHistoryDialog) {
+        ChatHistoryDialog(
+            viewModel = viewModel,
+            onDismiss = { showChatHistoryDialog = false }
+        )
+    }
+}
+
+@Composable
+fun ChatHistoryDialog(viewModel: FinanceViewModel, onDismiss: () -> Unit) {
+    val sessions by viewModel.chatSessions.collectAsState()
+    val currentSessionId by viewModel.currentSessionId.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Riwayat Obrolan", fontWeight = FontWeight.Black) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } },
+        text = {
+            if (sessions.isEmpty()) {
+                Text("Belum ada riwayat obrolan.", modifier = Modifier.padding(16.dp))
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                    items(sessions) { session ->
+                        val isSelected = session.id == currentSessionId
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                viewModel.switchSession(session.id)
+                                onDismiss()
+                            },
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(session.title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    val date = java.time.Instant.ofEpochMilli(session.lastTimestamp).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                                    Text(date.toString(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { viewModel.deleteSession(session.id) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
 }
 
 @Composable

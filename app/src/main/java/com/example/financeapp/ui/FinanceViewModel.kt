@@ -33,13 +33,30 @@ class FinanceViewModel(
     private val _userApiKey = MutableStateFlow("")
     val userApiKey: StateFlow<String> = _userApiKey
 
+    private val _aiProvider = MutableStateFlow("Gemini")
+    val aiProvider: StateFlow<String> = _aiProvider
+
+    private val _aiModel = MutableStateFlow("gemini-2.0-flash")
+    val aiModel: StateFlow<String> = _aiModel
+
     private val _userName = MutableStateFlow("User")
     val userName: StateFlow<String> = _userName
 
     private val _userProfileUri = MutableStateFlow("")
     val userProfileUri: StateFlow<String> = _userProfileUri
 
-    private val chatHistory = mutableListOf<Pair<String, String>>()
+    private val _currentSessionId = MutableStateFlow<String?>(null)
+    val currentSessionId: StateFlow<String?> = _currentSessionId
+
+    val chatSessions: StateFlow<List<ChatSession>> = dao.getAllChatSessionsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val chatMessages: StateFlow<List<ChatMessage>> = _currentSessionId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList())
+            else dao.getMessagesForSessionFlow(id)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val wallets: StateFlow<List<Wallet>> = dao.getAllWalletsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -87,7 +104,7 @@ class FinanceViewModel(
         DashboardStats(b, i, e, n)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardStats())
 
-    private val geminiService = GeminiService()
+    private val aiService = AiService()
 
     fun loadApiKey(context: Context) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -95,29 +112,37 @@ class FinanceViewModel(
             val key = sharedPref.getString("gemini_api_key", "") ?: ""
             val name = sharedPref.getString("user_profile_name", "User") ?: "User"
             val uri = sharedPref.getString("user_profile_uri", "") ?: ""
+            val provider = sharedPref.getString("ai_provider", "Gemini") ?: "Gemini"
+            val model = sharedPref.getString("ai_model", "gemini-2.0-flash") ?: "gemini-2.0-flash"
             _userApiKey.value = key
             _userName.value = name
             _userProfileUri.value = uri
+            _aiProvider.value = provider
+            _aiModel.value = model
         }
     }
 
-    fun saveUserProfile(context: Context, newName: String, newKey: String, newUri: String) {
+    fun saveUserProfile(context: Context, newName: String, newKey: String, newUri: String, newProvider: String, newModel: String) {
         val sharedPref = context.getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
         sharedPref.edit().apply {
             putString("user_profile_name", newName.ifBlank { "User" })
             putString("gemini_api_key", newKey.trim())
             putString("user_profile_uri", newUri)
+            putString("ai_provider", newProvider)
+            putString("ai_model", newModel)
         }.apply()
 
         _userName.value = newName.ifBlank { "User" }
         _userApiKey.value = newKey.trim()
         _userProfileUri.value = newUri
+        _aiProvider.value = newProvider
+        _aiModel.value = newModel
     }
 
     fun onAiAction(userInput: String, isChatMode: Boolean) {
         val currentKey = _userApiKey.value
         if (currentKey.isBlank()) {
-            _aiResponse.value = "🔑 **API Key Gemini Belum Diatur!**\n\nSilakan ketuk logo **Profil** di pojok kanan atas beranda, lalu masukkan API Key Gemini Flash 2.5 milikmu sendiri agar fitur AI bisa digunakan."
+            _aiResponse.value = "🔑 **API Key Belum Diatur!**\n\nSilakan ketuk logo **Profil** di pojok kanan atas beranda, lalu masukkan API Key sesuai provider pilihanmu (Gemini atau OpenRouter) agar fitur AI bisa digunakan."
             return
         }
 
@@ -137,7 +162,7 @@ class FinanceViewModel(
                 val context = activities.value.take(50).joinToString("\n") { 
                     "${it.date}: ${it.title} - Rp ${it.amount} (${it.type})"
                 }
-                val response = geminiService.auditMonthlySpending(currentKey, context)
+                val response = aiService.auditMonthlySpending(_aiProvider.value, _aiModel.value, currentKey, context)
                 _aiResponse.value = response
             } catch (e: Exception) {
                 _aiResponse.value = "❌ Gagal Audit: ${e.localizedMessage}"
@@ -156,7 +181,7 @@ class FinanceViewModel(
                 val context = activities.value.take(50).joinToString("\n") { 
                     "${it.date}: ${it.title} - Rp ${it.amount} (${it.type})"
                 }
-                val response = geminiService.generateSavingChallenge(currentKey, context)
+                val response = aiService.generateSavingChallenge(_aiProvider.value, _aiModel.value, currentKey, context)
                 _aiResponse.value = response
             } catch (e: Exception) {
                 _aiResponse.value = "❌ Gagal membuat tantangan: ${e.localizedMessage}"
@@ -173,7 +198,7 @@ class FinanceViewModel(
             _aiLoading.value = true
             try {
                 val balanceCtx = "Total Saldo: ${totalBalance.value}\nIncome Bulan Ini: ${totalIncome.value}\nExpense Bulan Ini: ${totalExpense.value}"
-                val response = geminiService.checkPurchaseEligibility(currentKey, itemName, itemPrice, balanceCtx)
+                val response = aiService.checkPurchaseEligibility(_aiProvider.value, _aiModel.value, currentKey, itemName, itemPrice, balanceCtx)
                 _aiResponse.value = response
             } catch (e: Exception) {
                 _aiResponse.value = "❌ Gagal cek kelayakan: ${e.localizedMessage}"
@@ -227,13 +252,9 @@ class FinanceViewModel(
                     - Perbandingan dengan Minggu Lalu: Pengeluaran ${if (diffPercent >= 0) "naik" else "turun"} ${kotlin.math.abs(diffPercent)}% dibanding minggu lalu.
                 """.trimIndent()
 
-                val responseRaw = geminiService.generateWeeklyDigest(currentKey, context)
-                val digest = try {
-                    Json { ignoreUnknownKeys = true }.decodeFromString<AiWeeklyDigest>(responseRaw)
-                } catch (e: Exception) {
-                    val cleaned = responseRaw.replace("```json", "").replace("```", "").trim()
-                    Json { ignoreUnknownKeys = true }.decodeFromString<AiWeeklyDigest>(cleaned)
-                }
+                val responseRaw = aiService.generateWeeklyDigest(_aiProvider.value, _aiModel.value, currentKey, context)
+                val cleanedJson = extractJson(responseRaw)
+                val digest = Json { ignoreUnknownKeys = true }.decodeFromString<AiWeeklyDigest>(cleanedJson)
 
                 _aiResponse.value = "## ${digest.notification_title}\n\n**${digest.notification_body}**\n\n${digest.deep_analysis}"
             } catch (e: Exception) {
@@ -287,7 +308,7 @@ class FinanceViewModel(
                     - Sisa Hari di Bulan Ini: $daysRemaining hari
                 """.trimIndent()
 
-                val response = geminiService.predictEndOfMonth(currentKey, context)
+                val response = aiService.predictEndOfMonth(_aiProvider.value, _aiModel.value, currentKey, context)
                 _endOfMonthPrediction.value = response
             } catch (e: Exception) {
                 _endOfMonthPrediction.value = "Gagal memprediksi: ${e.localizedMessage}"
@@ -301,7 +322,7 @@ class FinanceViewModel(
         viewModelScope.launch {
             _aiLoading.value = true
             try {
-                val context = buildString {
+                val financialContext = buildString {
                     append("Saldo Dompet:\n")
                     wallets.value.forEach { append("- ${it.name}: Rp ${it.balance}\n") }
                     append("\nTarget Menabung:\n")
@@ -315,15 +336,29 @@ class FinanceViewModel(
                     }
                 }
 
-                val response = geminiService.consultFinancialAi(apiKey, userInput, chatHistory, context)
+                val currentKey = _userApiKey.value
 
-                chatHistory.add("USER" to userInput)
-                chatHistory.add("FINANZAI" to response)
-
-                if (chatHistory.size > 20) {
-                    repeat(2) { chatHistory.removeAt(0) }
+                // Ensure a session exists
+                var sessionId = _currentSessionId.value
+                if (sessionId == null) {
+                    sessionId = java.util.UUID.randomUUID().toString()
+                    val title = if (userInput.length > 30) userInput.take(27) + "..." else userInput
+                    dao.insertChatSession(ChatSession(id = sessionId, title = title))
+                    _currentSessionId.value = sessionId
                 }
 
+                val response = aiService.consultFinancialAi(
+                    _aiProvider.value,
+                    _aiModel.value,
+                    currentKey,
+                    userInput,
+                    chatMessages.value.takeLast(10).map { it.role to it.content },
+                    financialContext
+                )
+
+                dao.insertChatMessage(ChatMessage(sessionId = sessionId, role = "USER", content = userInput))
+                dao.insertChatMessage(ChatMessage(sessionId = sessionId, role = "FINANZAI", content = response))
+                
                 _aiResponse.value = response
             } catch (e: Exception) {
                 _aiResponse.value = "❌ Gagal konsultasi: ${e.localizedMessage}"
@@ -345,14 +380,9 @@ class FinanceViewModel(
                 val walletsContext = currentWallets.joinToString { "ID: ${it.id} - Nama: ${it.name}" }
                 val kategorisContext = currentKategoris.joinToString { "ID: ${it.id} - Nama: ${it.name}" }
 
-                val jsonResultRaw = geminiService.parseNaturalLanguageTransaction(apiKey, userInput, walletsContext, kategorisContext)
-
-                val container = try {
-                    Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(jsonResultRaw)
-                } catch (e: Exception) {
-                    val cleanedJson = jsonResultRaw.replace("```json", "").replace("```", "").trim()
-                    Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(cleanedJson)
-                }
+                val jsonResultRaw = aiService.parseNaturalLanguageTransaction(_aiProvider.value, _aiModel.value, apiKey, userInput, walletsContext, kategorisContext)
+                val cleanedJson = extractJson(jsonResultRaw)
+                val container = Json { ignoreUnknownKeys = true }.decodeFromString<AiParsedTransactionsContainer>(cleanedJson)
 
                 var successCount = 0
                 val summaryReport = StringBuilder()
@@ -518,7 +548,37 @@ class FinanceViewModel(
 
     fun clearAiResponse() {
         _aiResponse.value = ""
-        chatHistory.clear()
+    }
+
+    fun startNewChat() {
+        _currentSessionId.value = null
+        _aiResponse.value = ""
+    }
+
+    fun switchSession(sessionId: String) {
+        _currentSessionId.value = sessionId
+        _aiResponse.value = ""
+    }
+
+    fun deleteSession(sessionId: String) {
+        viewModelScope.launch {
+            dao.deleteChatSession(sessionId)
+            if (_currentSessionId.value == sessionId) {
+                _currentSessionId.value = null
+            }
+        }
+    }
+
+    private fun extractJson(input: String): String {
+        val firstBrace = input.indexOf('{')
+        val lastBrace = input.lastIndexOf('}')
+        if (firstBrace == -1 || lastBrace == -1 || lastBrace < firstBrace) {
+            return input.replace("```json", "").replace("```", "").trim()
+        }
+        val result = input.substring(firstBrace, lastBrace + 1).trim()
+        // Final sanity check: ensure it starts and ends with braces
+        return if (result.startsWith("{") && result.endsWith("}")) result
+        else result.replace("```json", "").replace("```", "").trim()
     }
 
     fun exportData(onResult: (String?) -> Unit) {
